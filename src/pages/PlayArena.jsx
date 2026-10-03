@@ -1,524 +1,779 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { ArrowLeft, Volume2, Gamepad2, Brain, Shuffle, PlusCircle, Trash2, Edit2 } from 'lucide-react';
+import { sounds, speakWord } from '../utils/audio';
+import { triggerConfetti } from '../utils/confetti';
+import { PRESET_LISTS } from '../data/presetLists';
+import {
+    ArrowLeft, Volume2, Gamepad2, Brain, Shuffle, PlusCircle,
+    Trash2, Sparkles, Flame, CheckCircle2, RotateCcw, Award, Play
+} from 'lucide-react';
 
 export default function PlayArena() {
     const navigate = useNavigate();
-    const { activeProfile, customLists, setCustomLists, addStarToActive, recordWordAttempt, ttsMuted } = useAppContext();
+    const {
+        activeProfile,
+        customLists,
+        setCustomLists,
+        addStarToActive,
+        recordWordAttempt,
+        importPresetList,
+        ttsMuted
+    } = useAppContext();
 
     const [selectedList, setSelectedList] = useState(null);
-    const [selectedMode, setSelectedMode] = useState(null); // 'classic', 'memory', 'scramble'
+    const [selectedMode, setSelectedMode] = useState('classic'); // 'classic', 'memory', 'scramble'
 
-    // Child List Creation State
+    // Child List Creation
     const [isCreatingList, setIsCreatingList] = useState(false);
-    const [editingListId, setEditingListId] = useState(null);
     const [newListTitle, setNewListTitle] = useState('');
     const [newWord, setNewWord] = useState('');
     const [newHint, setNewHint] = useState('');
+    const [createdWords, setCreatedWords] = useState([]);
 
-    // Game State
+    // Game Engine State
+    const [isPlaying, setIsPlaying] = useState(false);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [userInput, setUserInput] = useState('');
-    const [feedback, setFeedback] = useState('');
+    const [feedback, setFeedback] = useState(null); // { type: 'success' | 'error', message: string }
     const [gameOver, setGameOver] = useState(false);
     const [score, setScore] = useState(0);
+    const [streak, setStreak] = useState(0);
+    const [highestStreak, setHighestStreak] = useState(0);
+    const [correctCount, setCorrectCount] = useState(0);
 
     // Memory Mode State
-    const [showFlashWord, setShowFlashWord] = useState(false);
+    const [memoryCountdown, setMemoryCountdown] = useState(3);
+    const [isShowingFlash, setIsShowingFlash] = useState(false);
 
     // Scramble Mode State
     const [scrambledLetters, setScrambledLetters] = useState([]);
     const [scramblePlaced, setScramblePlaced] = useState([]);
 
+    const inputRef = useRef(null);
+
+    // Redirect if no active profile
     useEffect(() => {
-        if (!activeProfile) navigate('/');
+        if (!activeProfile) {
+            navigate('/');
+        }
     }, [activeProfile, navigate]);
 
-    const speakWord = (textToSpeak) => {
-        if (ttsMuted) return;
-        if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(textToSpeak || selectedList.words[currentIndex].word);
-            utterance.rate = 0.8;
-            utterance.pitch = 1.2;
-            window.speechSynthesis.speak(utterance);
-        }
-    };
+    // Student's personal lists
+    const studentLists = customLists.filter(list => list.profileId === activeProfile?.id);
 
-    // Initialize Word State when moving to next word or mode change
+    // Auto-select first list if available and none selected
     useEffect(() => {
-        if (selectedMode && selectedList && !gameOver) {
-            const currentWordObj = selectedList.words[currentIndex];
+        if (!selectedList && studentLists.length > 0) {
+            setSelectedList(studentLists[0]);
+        }
+    }, [studentLists, selectedList]);
 
-            if (selectedMode === 'memory') {
-                setShowFlashWord(true);
-                speakWord(currentWordObj.word);
-                setTimeout(() => setShowFlashWord(false), 3000);
-            } else if (selectedMode === 'scramble') {
-                const letters = currentWordObj.word.split('');
-                for (let i = letters.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [letters[i], letters[j]] = [letters[j], letters[i]];
-                }
-                setScrambledLetters(letters.map((char, id) => ({ char, id })));
-                setScramblePlaced([]);
-                speakWord(currentWordObj.word);
-            } else {
-                speakWord(currentWordObj.word);
+    // Handle Word Initialization per Round
+    useEffect(() => {
+        if (!isPlaying || !selectedList || gameOver) return;
+
+        const currentWordObj = selectedList.words[currentIndex];
+        if (!currentWordObj) return;
+
+        setUserInput('');
+        setFeedback(null);
+
+        // Announce word with TTS
+        speakWord(currentWordObj.word);
+
+        if (selectedMode === 'memory') {
+            setIsShowingFlash(true);
+            setMemoryCountdown(3);
+
+            const timer = setInterval(() => {
+                setMemoryCountdown(prev => {
+                    if (prev <= 1) {
+                        clearInterval(timer);
+                        setIsShowingFlash(false);
+                        setTimeout(() => inputRef.current?.focus(), 50);
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+
+            return () => clearInterval(timer);
+        } else if (selectedMode === 'scramble') {
+            // Shuffle word letters
+            const chars = currentWordObj.word.split('').map((char, id) => ({ char, id }));
+            for (let i = chars.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [chars[i], chars[j]] = [chars[j], chars[i]];
             }
+            setScrambledLetters(chars);
+            setScramblePlaced([]);
+        } else {
+            // Classic mode auto focus
+            setTimeout(() => inputRef.current?.focus(), 100);
         }
-    }, [currentIndex, selectedMode, selectedList, gameOver]);
+    }, [currentIndex, isPlaying, selectedMode, selectedList, gameOver]);
 
-    const handleNextWord = (isCorrect) => {
-        if (selectedList && selectedList.words[currentIndex]) {
-            recordWordAttempt(selectedList.words[currentIndex].word, isCorrect);
-        }
+    // Keyboard support for scramble mode
+    useEffect(() => {
+        if (!isPlaying || selectedMode !== 'scramble' || gameOver || !selectedList) return;
+
+        const handleKeyDown = (e) => {
+            const currentWord = selectedList.words[currentIndex]?.word.toLowerCase();
+            if (!currentWord) return;
+
+            if (e.key === 'Backspace') {
+                if (scramblePlaced.length > 0) {
+                    sounds.playPop();
+                    setScramblePlaced(prev => prev.slice(0, -1));
+                }
+            } else if (/^[a-zA-Z]$/.test(e.key)) {
+                const pressedChar = e.key.toLowerCase();
+                // Find next available matching tile
+                const available = scrambledLetters.find(l =>
+                    l.char.toLowerCase() === pressedChar && !scramblePlaced.some(p => p.id === l.id)
+                );
+                if (available && scramblePlaced.length < currentWord.length) {
+                    handlePlaceScrambleTile(available);
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isPlaying, selectedMode, scrambledLetters, scramblePlaced, currentIndex, selectedList, gameOver]);
+
+    // Submit / Evaluate Answer
+    const handleEvaluateWord = (isCorrect) => {
+        const currentWord = selectedList.words[currentIndex]?.word;
+        recordWordAttempt(currentWord, isCorrect);
 
         if (isCorrect) {
-            setFeedback('Correct! 🌟');
-            setScore(s => s + 10);
-            speakWord("Correct!");
-            addStarToActive(1);
-        } else {
-            setFeedback('Not quite, try again!');
-            speakWord("Try again");
-            return;
-        }
+            sounds.playCorrect();
+            const newStreak = streak + 1;
+            setStreak(newStreak);
+            if (newStreak > highestStreak) setHighestStreak(newStreak);
+            if (newStreak % 3 === 0) sounds.playStreak();
 
-        setTimeout(() => {
-            setFeedback('');
-            setUserInput('');
-            if (currentIndex < selectedList.words.length - 1) {
-                setCurrentIndex(i => i + 1);
-            } else {
-                setGameOver(true);
-                speakWord("You finished the list! Great job!");
-            }
-        }, 1500);
+            const earnedPoints = 10 + (newStreak > 1 ? newStreak * 2 : 0);
+            setScore(s => s + earnedPoints);
+            setCorrectCount(c => c + 1);
+            addStarToActive(1);
+
+            setFeedback({
+                type: 'success',
+                message: newStreak > 2 ? `🔥 ${newStreak} in a row! Awesome!` : '⭐ Fantastic! Correct!'
+            });
+
+            setTimeout(() => {
+                if (currentIndex < selectedList.words.length - 1) {
+                    setCurrentIndex(i => i + 1);
+                } else {
+                    // Completed whole list!
+                    setGameOver(true);
+                    sounds.playVictory();
+                    triggerConfetti();
+                }
+            }, 1200);
+        } else {
+            sounds.playWrong();
+            setStreak(0);
+            setFeedback({
+                type: 'error',
+                message: `Not quite! Listen again and give it another try.`
+            });
+            speakWord("Try again. " + currentWord);
+        }
     };
 
-    const handleClassicSubmit = (e) => {
+    const handleTextSubmit = (e) => {
         e.preventDefault();
         if (!userInput.trim()) return;
-        const isCorrect = userInput.trim().toLowerCase() === selectedList.words[currentIndex].word.toLowerCase();
-        handleNextWord(isCorrect);
+
+        const targetWord = selectedList.words[currentIndex].word.trim().toLowerCase();
+        const isMatch = userInput.trim().toLowerCase() === targetWord;
+        handleEvaluateWord(isMatch);
     };
 
-    const handleMemorySubmit = handleClassicSubmit;
-
-    const handleScrambleTileClick = (letterObj) => {
-        if (scramblePlaced.find(p => p.id === letterObj.id)) return;
-        const newPlaced = [...scramblePlaced, letterObj];
+    const handlePlaceScrambleTile = (tileObj) => {
+        sounds.playPop();
+        const newPlaced = [...scramblePlaced, tileObj];
         setScramblePlaced(newPlaced);
 
-        if (newPlaced.length === selectedList.words[currentIndex].word.length) {
-            const formedWord = newPlaced.map(l => l.char).join('').toLowerCase();
-            const targetWord = selectedList.words[currentIndex].word.toLowerCase();
-
-            if (formedWord === targetWord) {
-                handleNextWord(true);
+        const targetWord = selectedList.words[currentIndex].word.toLowerCase();
+        if (newPlaced.length === targetWord.length) {
+            const formed = newPlaced.map(t => t.char).join('').toLowerCase();
+            if (formed === targetWord) {
+                handleEvaluateWord(true);
             } else {
-                setFeedback("Oops! That's not it.");
-                speakWord("Oops, puzzle is mixed up. Try again.");
-                setTimeout(() => { setScramblePlaced([]); setFeedback(''); }, 1500);
+                sounds.playWrong();
+                setFeedback({ type: 'error', message: 'Letters are mixed up. Try again!' });
+                setTimeout(() => {
+                    setScramblePlaced([]);
+                    setFeedback(null);
+                }, 1000);
             }
         }
     };
 
-    const removeScrambleTile = (indexToRemove) => {
-        setScramblePlaced(scramblePlaced.filter((_, i) => i !== indexToRemove));
+    const handleRemoveScrambleTile = (index) => {
+        sounds.playPop();
+        setScramblePlaced(prev => prev.filter((_, i) => i !== index));
     };
 
-    // --- Child List Management Logic ---
-    const handleCreateChildList = (e) => {
-        e.preventDefault();
-        if (!newListTitle.trim()) return;
-        const newList = { id: Date.now().toString(), profileId: activeProfile.id, title: newListTitle, words: [], scheduledDate: '' };
-        setCustomLists([...customLists, newList]);
-        setEditingListId(newList.id);
-        setIsCreatingList(false); // Move to edit mode
+    const handleStartGame = () => {
+        if (!selectedList || selectedList.words.length === 0) return;
+        sounds.playPop();
+        setCurrentIndex(0);
+        setScore(0);
+        setStreak(0);
+        setCorrectCount(0);
+        setGameOver(false);
+        setIsPlaying(true);
     };
 
-    const handleAddWordToChildList = (e) => {
-        e.preventDefault();
-        if (!newWord.trim() || !editingListId) return;
+    const handleResetArena = () => {
+        sounds.playPop();
+        setIsPlaying(false);
+        setGameOver(false);
+        setCurrentIndex(0);
+        setScore(0);
+        setStreak(0);
+    };
 
-        setCustomLists(customLists.map(list => {
-            if (list.id === editingListId) {
-                return { ...list, words: [...list.words, { word: newWord.toLowerCase(), hint: newHint || "No hint provided" }] };
-            }
-            return list;
-        }));
+    // Child List Creation Handler
+    const handleSaveNewList = (e) => {
+        e.preventDefault();
+        if (!newListTitle.trim() || createdWords.length === 0) return;
+
+        const created = {
+            id: `list-${Date.now()}`,
+            profileId: activeProfile.id,
+            title: newListTitle,
+            words: createdWords,
+            scheduledDate: ''
+        };
+
+        setCustomLists([...customLists, created]);
+        setSelectedList(created);
+        setIsCreatingList(false);
+        setNewListTitle('');
+        setCreatedWords([]);
+        sounds.playCorrect();
+    };
+
+    const handleAddWordToNewList = (e) => {
+        e.preventDefault();
+        if (!newWord.trim()) return;
+        sounds.playPop();
+        setCreatedWords([...createdWords, {
+            word: newWord.trim().toLowerCase(),
+            hint: newHint.trim() || 'Spelling practice word'
+        }]);
         setNewWord('');
         setNewHint('');
     };
 
-    const removeWordFromChildList = (listId, wordIndex) => {
-        setCustomLists(customLists.map(list => {
-            if (list.id === listId) {
-                return { ...list, words: list.words.filter((_, idx) => idx !== wordIndex) };
-            }
-            return list;
-        }));
-    };
-
     if (!activeProfile) return null;
 
-    const sortedLists = customLists
-        .filter(list => list.profileId === activeProfile.id)
-        .sort((a, b) => {
-            if (a.scheduledDate && !b.scheduledDate) return -1;
-            if (!a.scheduledDate && b.scheduledDate) return 1;
-            if (a.scheduledDate && b.scheduledDate) return new Date(a.scheduledDate) - new Date(b.scheduledDate);
-            return 0;
-        });
-
-    // VIEW 3: CHILD LIST CREATOR / EDITOR
-    if (isCreatingList || editingListId) {
-        const activeEditingList = customLists.find(l => l.id === editingListId);
-
+    // --- VIEW: CHILD LIST CREATOR ---
+    if (isCreatingList) {
         return (
-            <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '15px' }}>
-                    <button onClick={() => { setIsCreatingList(false); setEditingListId(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', fontWeight: 'bold' }}>
-                        <ArrowLeft size={24} /> Back to Arena
+            <div className="animate-fade" style={{ maxWidth: '640px', margin: '0 auto' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+                    <button
+                        onClick={() => { sounds.playPop(); setIsCreatingList(false); }}
+                        className="btn btn-secondary"
+                    >
+                        <ArrowLeft size={18} /> Back
                     </button>
-                    <h2 style={{ fontSize: '2rem', color: '#333', margin: 0 }}>
-                        {isCreatingList ? '✨ Make a New List ✨' : '✏️ Editing Your List'}
-                    </h2>
+                    <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.6rem' }}>✨ Create Word List</h2>
+                    <div style={{ width: '80px' }} />
                 </div>
 
-                <div className="glass-panel" style={{ padding: '30px', background: 'white' }}>
-                    {isCreatingList ? (
-                        <form onSubmit={handleCreateChildList}>
-                            <label style={{ display: 'block', marginBottom: '10px', fontWeight: 'bold', fontSize: '1.2rem' }}>What do you want to call your list?</label>
+                <div className="glass-panel" style={{ padding: '24px' }}>
+                    <div style={{ marginBottom: '20px' }}>
+                        <label style={{ display: 'block', fontWeight: 700, marginBottom: '6px' }}>List Name</label>
+                        <input
+                            type="text"
+                            placeholder="e.g., Friday Spelling Test, Dinosaur Words..."
+                            value={newListTitle}
+                            onChange={e => setNewListTitle(e.target.value)}
+                            className="input-field"
+                            required
+                        />
+                    </div>
+
+                    <form onSubmit={handleAddWordToNewList} style={{ background: '#F8FAFC', padding: '16px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid #E2E8F0' }}>
+                        <div style={{ fontWeight: 700, marginBottom: '10px', color: '#475569' }}>Add Words:</div>
+                        <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
                             <input
                                 type="text"
-                                value={newListTitle}
-                                onChange={e => setNewListTitle(e.target.value)}
-                                placeholder="e.g., Space Words, or May 24th"
-                                required
-                                style={{ width: '100%', padding: '15px', borderRadius: '15px', border: '2px solid #ccc', fontSize: '1.2rem', marginBottom: '20px' }}
+                                placeholder="Word (e.g., butterfly)"
+                                value={newWord}
+                                onChange={e => setNewWord(e.target.value)}
+                                className="input-field"
+                                style={{ flex: 1 }}
                             />
-                            <button type="submit" className="btn-primary" style={{ width: '100%', padding: '15px', fontSize: '1.2rem' }}>Start Adding Words!</button>
-                        </form>
-                    ) : (
-                        <div>
-                            <h3 style={{ fontSize: '1.5rem', marginBottom: '20px', borderBottom: '2px solid #eee', paddingBottom: '10px' }}>
-                                Adding words to: <span style={{ color: 'var(--primary-red)' }}>{activeEditingList?.title}</span>
-                            </h3>
+                            <button type="submit" className="btn btn-primary" disabled={!newWord.trim()}>
+                                + Add
+                            </button>
+                        </div>
+                        <input
+                            type="text"
+                            placeholder="Hint or sentence clue (optional)"
+                            value={newHint}
+                            onChange={e => setNewHint(e.target.value)}
+                            className="input-field"
+                            style={{ fontSize: '0.95rem' }}
+                        />
+                    </form>
 
-                            <form onSubmit={handleAddWordToChildList} style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '30px', background: '#f5f5f5', padding: '20px', borderRadius: '15px' }}>
-                                <input
-                                    type="text"
-                                    required
-                                    placeholder="Type the spelling word here..."
-                                    value={newWord}
-                                    onChange={e => setNewWord(e.target.value)}
-                                    style={{ padding: '15px', borderRadius: '10px', border: '1px solid #ccc', fontSize: '1.1rem' }}
-                                />
-                                <input
-                                    type="text"
-                                    placeholder="Add a fun hint! (optional)"
-                                    value={newHint}
-                                    onChange={e => setNewHint(e.target.value)}
-                                    style={{ padding: '15px', borderRadius: '10px', border: '1px solid #ccc', fontSize: '1.1rem' }}
-                                />
-                                <button type="submit" className="btn-primary" style={{ padding: '12px' }}>+ Add to List</button>
-                            </form>
-
-                            <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                                <h4 style={{ color: '#666', marginBottom: '10px' }}>Words in this list:</h4>
-                                {activeEditingList?.words.length === 0 && <p style={{ color: '#aaa', fontStyle: 'italic' }}>No words yet! Add some above.</p>}
-                                {activeEditingList?.words.map((w, idx) => (
-                                    <div key={idx} style={{ padding: '15px', background: 'white', border: '2px solid #eee', borderRadius: '10px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <div>
-                                            <strong style={{ fontSize: '1.2rem', display: 'block' }}>{w.word}</strong>
-                                            <span style={{ color: '#666' }}>{w.hint}</span>
-                                        </div>
-                                        <button onClick={() => removeWordFromChildList(editingListId, idx)} style={{ background: '#ffebee', border: 'none', color: '#ff4b4b', padding: '10px', borderRadius: '50%', cursor: 'pointer' }}>
-                                            <Trash2 size={20} />
+                    {/* Word List Preview */}
+                    <div style={{ marginBottom: '20px' }}>
+                        <div style={{ fontWeight: 700, marginBottom: '8px', color: '#475569' }}>
+                            Words Added ({createdWords.length}):
+                        </div>
+                        {createdWords.length === 0 ? (
+                            <p style={{ color: '#94A3B8', fontStyle: 'italic', fontSize: '0.95rem' }}>No words added yet. Add some above!</p>
+                        ) : (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+                                {createdWords.map((w, idx) => (
+                                    <div key={idx} style={{ background: '#EEF2FF', color: '#3730A3', padding: '6px 12px', borderRadius: '9999px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                                        <span>{w.word}</span>
+                                        <button
+                                            onClick={() => { sounds.playPop(); setCreatedWords(createdWords.filter((_, i) => i !== idx)); }}
+                                            style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', display: 'flex' }}
+                                        >
+                                            ✕
                                         </button>
                                     </div>
                                 ))}
                             </div>
+                        )}
+                    </div>
 
-                            <button onClick={() => setEditingListId(null)} className="btn-primary" style={{ width: '100%', marginTop: '20px', background: 'var(--primary-yellow)', color: '#333' }}>
-                                Done Editing!
-                            </button>
-                        </div>
-                    )}
+                    <button
+                        onClick={handleSaveNewList}
+                        className="btn btn-emerald"
+                        style={{ width: '100%', fontSize: '1.1rem' }}
+                        disabled={!newListTitle.trim() || createdWords.length === 0}
+                    >
+                        Save & Start Playing!
+                    </button>
                 </div>
             </div>
         );
     }
 
-    // VIEW 1: SELECTION MENU
-    if (!selectedList || !selectedMode) {
+    // --- VIEW: GAMEPLAY SCREEN ---
+    if (isPlaying && selectedList) {
+        const currentWord = selectedList.words[currentIndex];
+
+        if (gameOver) {
+            return (
+                <div className="animate-pop" style={{ maxWidth: '600px', margin: '0 auto', textAlign: 'center', padding: '20px 0' }}>
+                    <div style={{ fontSize: '5rem', marginBottom: '16px' }}>🏆</div>
+                    <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '2.4rem', color: '#1E293B', marginBottom: '8px' }}>
+                        Awesome Job, {activeProfile.name}!
+                    </h2>
+                    <p style={{ color: '#64748B', fontSize: '1.15rem', marginBottom: '24px' }}>
+                        You completed <strong>{selectedList.title}</strong>!
+                    </p>
+
+                    {/* Stats Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '32px' }}>
+                        <div className="glass-panel" style={{ padding: '16px' }}>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 700, color: '#4F46E5' }}>{score}</div>
+                            <div style={{ fontSize: '0.85rem', color: '#64748B', fontWeight: 600 }}>Total Score</div>
+                        </div>
+                        <div className="glass-panel" style={{ padding: '16px' }}>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 700, color: '#F59E0B' }}>+{selectedList.words.length} ⭐</div>
+                            <div style={{ fontSize: '0.85rem', color: '#64748B', fontWeight: 600 }}>Stars Earned</div>
+                        </div>
+                        <div className="glass-panel" style={{ padding: '16px' }}>
+                            <div style={{ fontSize: '1.8rem', fontWeight: 700, color: '#EA580C' }}>🔥 {highestStreak}</div>
+                            <div style={{ fontSize: '0.85rem', color: '#64748B', fontWeight: 600 }}>Best Streak</div>
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                        <button onClick={handleStartGame} className="btn btn-primary" style={{ padding: '14px 28px' }}>
+                            <RotateCcw size={18} /> Play Again
+                        </button>
+                        <button onClick={handleResetArena} className="btn btn-secondary" style={{ padding: '14px 28px' }}>
+                            Choose Another List
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        const progressPercent = ((currentIndex) / selectedList.words.length) * 100;
+
         return (
-            <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-                <h2 style={{ textAlign: 'center', marginBottom: '30px', fontSize: '2rem' }}>
-                    Welcome, {activeProfile.name}! 👋
-                </h2>
+            <div className="animate-fade" style={{ maxWidth: '640px', margin: '0 auto' }}>
+                {/* Arena Top Bar */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <button
+                        onClick={handleResetArena}
+                        className="btn btn-secondary"
+                        style={{ padding: '8px 14px', fontSize: '0.9rem' }}
+                    >
+                        <ArrowLeft size={16} /> Exit
+                    </button>
 
-                <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap' }}>
-                    {/* List Selection */}
-                    <div className="glass-panel" style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column' }}>
-                        <h3 style={{ marginBottom: '20px', borderBottom: '2px solid #eee', paddingBottom: '10px' }}>1. Pick a Word List</h3>
-
-                        <div style={{ flex: 1, overflowY: 'auto', marginBottom: '15px' }}>
-                            {sortedLists.map(list => (
-                                <div
-                                    key={list.id}
-                                    style={{
-                                        display: 'flex', alignItems: 'center', marginBottom: '10px',
-                                        background: selectedList?.id === list.id ? '#e3f2fd' : 'white',
-                                        border: selectedList?.id === list.id ? '2px solid #2196f3' : '2px solid #eee',
-                                        borderRadius: '10px', overflow: 'hidden'
-                                    }}
-                                >
-                                    <div
-                                        onClick={() => setSelectedList(list)}
-                                        style={{
-                                            flex: 1, padding: '15px', cursor: 'pointer', fontWeight: 'bold',
-                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                                        }}
-                                    >
-                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span>{list.title}</span>
-                                            {list.scheduledDate && (
-                                                <span style={{ fontSize: '0.8rem', color: '#ff9800', marginTop: '4px' }}>
-                                                    📅 Due: {new Date(list.scheduledDate).toLocaleDateString()}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <span style={{ color: '#888', fontWeight: 'normal' }}>{list.words.length} words</span>
-                                    </div>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); setEditingListId(list.id); setNewListTitle(list.title); }}
-                                        style={{ padding: '0 15px', background: 'none', border: 'none', borderLeft: '1px solid #eee', color: '#666', cursor: 'pointer', height: '100%' }}
-                                        title="Edit List"
-                                    >
-                                        <Edit2 size={18} />
-                                    </button>
-                                </div>
-                            ))}
-                            {sortedLists.length === 0 && (
-                                <p style={{ color: '#888', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>No lists found.</p>
-                            )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        {streak > 1 && (
+                            <div className="streak-badge">
+                                <Flame size={16} /> {streak} Streak!
+                            </div>
+                        )}
+                        <div style={{ background: '#FEF3C7', color: '#B45309', fontWeight: 700, padding: '6px 14px', borderRadius: '9999px', fontSize: '0.95rem' }}>
+                            Score: {score}
                         </div>
-
-                        <button
-                            onClick={() => { setIsCreatingList(true); setNewListTitle(''); }}
-                            className="btn-primary"
-                            style={{ width: '100%', background: 'var(--primary-yellow)', color: '#333', display: 'flex', justifyContent: 'center', gap: '8px', padding: '15px' }}
-                        >
-                            <PlusCircle size={20} /> Create My Own List!
-                        </button>
-                    </div>
-
-                    {/* Mode Selection */}
-                    <div className="glass-panel" style={{ flex: 1, padding: '20px', opacity: selectedList ? 1 : 0.5, pointerEvents: selectedList ? 'auto' : 'none' }}>
-                        <h3 style={{ marginBottom: '20px', borderBottom: '2px solid #eee', paddingBottom: '10px' }}>2. Choose an Arena</h3>
-
-                        <button onClick={() => setSelectedMode('classic')} className="interactive-hover" style={{
-                            width: '100%', padding: '20px', marginBottom: '15px', borderRadius: '15px', cursor: 'pointer',
-                            background: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)', border: 'none', color: '#333', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '15px'
-                        }}>
-                            <Gamepad2 size={32} />
-                            <div>
-                                <strong style={{ fontSize: '1.2rem', display: 'block' }}>Classic Test</strong>
-                                <span style={{ fontSize: '0.9rem' }}>Listen to the word and type it out.</span>
-                            </div>
-                        </button>
-
-                        <button onClick={() => setSelectedMode('memory')} className="interactive-hover" style={{
-                            width: '100%', padding: '20px', marginBottom: '15px', borderRadius: '15px', cursor: 'pointer',
-                            background: 'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)', border: 'none', color: '#333', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '15px'
-                        }}>
-                            <Brain size={32} />
-                            <div>
-                                <strong style={{ fontSize: '1.2rem', display: 'block' }}>Memory Master</strong>
-                                <span style={{ fontSize: '0.9rem' }}>Look at the word for 3 seconds, then spell it!</span>
-                            </div>
-                        </button>
-
-                        <button onClick={() => setSelectedMode('scramble')} className="interactive-hover" style={{
-                            width: '100%', padding: '20px', borderRadius: '15px', cursor: 'pointer',
-                            background: 'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)', border: 'none', color: '#333', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '15px'
-                        }}>
-                            <Shuffle size={32} />
-                            <div>
-                                <strong style={{ fontSize: '1.2rem', display: 'block' }}>Word Scramble</strong>
-                                <span style={{ fontSize: '0.9rem' }}>Put the mixed-up letters back in order.</span>
-                            </div>
-                        </button>
                     </div>
                 </div>
-            </div>
-        );
-    }
 
-    // VIEW 2: GAMEPLAY
-    return (
-        <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto', textAlign: 'center' }}>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-                <button
-                    onClick={() => { setSelectedList(null); setSelectedMode(null); setGameOver(false); setCurrentIndex(0); setScore(0); }}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold' }}
-                >
-                    <ArrowLeft size={20} /> Change Arena
-                </button>
-                <div style={{ background: 'var(--primary-yellow)', padding: '5px 15px', borderRadius: '20px', fontWeight: 'bold' }}>
-                    Score: {score}
-                </div>
-            </div>
-
-            {gameOver ? (
-                <div className="glass-panel animate-fade-in" style={{ padding: '50px 20px' }}>
-                    <h2>🎉 You completed the {selectedList.title} Arena! 🎉</h2>
-                    <p style={{ fontSize: '1.5rem', margin: '20px 0' }}>You earned {score} points and {selectedList.words.length} stars!</p>
-                    <div style={{ fontSize: '4rem', marginBottom: '30px' }}>{activeProfile.avatar}</div>
-                    <button className="btn-primary" onClick={() => { setSelectedList(null); setSelectedMode(null); setGameOver(false); setCurrentIndex(0); setScore(0); }}>Play Another</button>
-                </div>
-            ) : (
-                <div className="glass-panel" style={{ padding: '40px 20px', maxWidth: '600px', margin: '0 auto' }}>
-
-                    <div style={{ color: '#888', fontWeight: 'bold', marginBottom: '10px' }}>
-                        Word {currentIndex + 1} of {selectedList.words.length}
+                {/* Progress Bar */}
+                <div style={{ marginBottom: '24px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#64748B', fontWeight: 700, marginBottom: '6px' }}>
+                        <span>Word {currentIndex + 1} of {selectedList.words.length}</span>
+                        <span>{Math.round(progressPercent)}%</span>
                     </div>
-
-                    <div style={{ width: '100%', height: '12px', background: '#e0e0e0', borderRadius: '10px', marginBottom: '20px', overflow: 'hidden' }}>
+                    <div style={{ width: '100%', height: '10px', background: '#E2E8F0', borderRadius: '9999px', overflow: 'hidden' }}>
                         <div style={{
-                            width: `${((currentIndex) / selectedList.words.length) * 100}%`,
+                            width: `${progressPercent}%`,
                             height: '100%',
-                            background: 'linear-gradient(90deg, #4facfe 0%, #00f2fe 100%)',
-                            transition: 'width 0.4s ease-in-out',
-                            borderRadius: '10px'
+                            background: 'linear-gradient(90deg, #4F46E5 0%, #06B6D4 100%)',
+                            transition: 'width 0.4s ease-out'
                         }} />
                     </div>
+                </div>
 
+                {/* Game Card */}
+                <div className="glass-panel" style={{ padding: '32px 24px', textAlign: 'center' }}>
+                    {/* Audio Hear Word Button */}
                     {!ttsMuted && (
                         <button
-                            onClick={() => speakWord(selectedList.words[currentIndex].word)}
-                            className="btn-speaker"
-                            style={{ padding: '15px', borderRadius: '50%', marginBottom: '20px', width: '60px', height: '60px', display: 'inline-flex', justifyContent: 'center', alignItems: 'center' }}
-                            title="Hear Word Again"
+                            onClick={() => speakWord(currentWord?.word)}
+                            className="btn-icon"
+                            style={{
+                                width: '64px',
+                                height: '64px',
+                                margin: '0 auto 16px',
+                                background: '#EEF2FF',
+                                color: '#4F46E5',
+                                border: '2px solid #C7D2FE',
+                                boxShadow: '0 4px 12px rgba(79, 70, 229, 0.15)'
+                            }}
+                            title="Hear word again"
                         >
-                            <Volume2 size={24} />
+                            <Volume2 size={32} />
                         </button>
                     )}
 
-                    <div className="hint-card" style={{ marginBottom: '30px' }}>
-                        <p className="hint-text">Hint: "{selectedList.words[currentIndex].hint}"</p>
+                    {/* Hint / Context */}
+                    <div style={{
+                        background: '#F8FAFC',
+                        border: '1px dashed #CBD5E1',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '14px 20px',
+                        marginBottom: '28px',
+                        color: '#475569',
+                        fontSize: '1.05rem',
+                        fontStyle: 'italic'
+                    }}>
+                        "{currentWord?.hint || 'Listen carefully to the word'}"
                     </div>
 
-
-                    {/* --- MODE: CLASSIC --- */}
+                    {/* GAME MODE 1: CLASSIC TEST */}
                     {selectedMode === 'classic' && (
-                        <form onSubmit={handleClassicSubmit} className="input-section">
+                        <form onSubmit={handleTextSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                             <input
+                                ref={inputRef}
                                 type="text"
                                 value={userInput}
-                                onChange={(e) => setUserInput(e.target.value)}
+                                onChange={e => setUserInput(e.target.value)}
                                 placeholder="Type the word here..."
+                                className="game-input"
                                 autoFocus
                                 autoComplete="off"
+                                autoCorrect="off"
                                 spellCheck="false"
                             />
-                            <button type="submit" className="btn-primary" disabled={!userInput}>Submit</button>
+                            <button
+                                type="submit"
+                                className="btn btn-primary"
+                                style={{ padding: '16px', fontSize: '1.2rem' }}
+                                disabled={!userInput.trim()}
+                            >
+                                Submit Answer ✨
+                            </button>
                         </form>
                     )}
 
-                    {/* --- MODE: MEMORY MASTER --- */}
+                    {/* GAME MODE 2: MEMORY MASTER */}
                     {selectedMode === 'memory' && (
                         <div>
-                            {showFlashWord ? (
-                                <div style={{ fontSize: '4rem', fontWeight: 'bold', letterSpacing: '8px', color: 'var(--primary-red)', marginBottom: '30px', animation: 'popIn 0.3s' }}>
-                                    {selectedList.words[currentIndex].word.toUpperCase()}
+                            {isShowingFlash ? (
+                                <div className="animate-pop" style={{ padding: '20px 0' }}>
+                                    <div style={{ fontSize: '0.9rem', color: '#6B21A8', fontWeight: 700, marginBottom: '8px' }}>
+                                        👀 Remember this word! ({memoryCountdown}s)
+                                    </div>
+                                    <div style={{
+                                        fontFamily: 'var(--font-display)',
+                                        fontSize: '3.5rem',
+                                        fontWeight: 700,
+                                        letterSpacing: '6px',
+                                        color: '#6B21A8',
+                                        textTransform: 'uppercase'
+                                    }}>
+                                        {currentWord?.word}
+                                    </div>
                                 </div>
                             ) : (
-                                <form onSubmit={handleMemorySubmit} className="input-section animate-fade-in">
+                                <form onSubmit={handleTextSubmit} className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                     <input
+                                        ref={inputRef}
                                         type="text"
                                         value={userInput}
-                                        onChange={(e) => setUserInput(e.target.value)}
-                                        placeholder="Remember it? Type it here..."
+                                        onChange={e => setUserInput(e.target.value)}
+                                        placeholder="Remember it? Type here..."
+                                        className="game-input"
                                         autoFocus
                                         autoComplete="off"
                                         spellCheck="false"
                                     />
-                                    <button type="submit" className="btn-primary" disabled={!userInput}>Submit</button>
+                                    <button
+                                        type="submit"
+                                        className="btn btn-primary"
+                                        style={{ padding: '16px', fontSize: '1.2rem', background: '#8B5CF6', boxShadow: '0 4px 0 #6D28D9' }}
+                                        disabled={!userInput.trim()}
+                                    >
+                                        Check Memory 🧠
+                                    </button>
                                 </form>
                             )}
                         </div>
                     )}
 
-                    {/* --- MODE: SCRAMBLE --- */}
+                    {/* GAME MODE 3: WORD SCRAMBLE */}
                     {selectedMode === 'scramble' && (
                         <div>
-                            {/* Placement Slots */}
-                            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginBottom: '30px', minHeight: '60px' }}>
-                                {Array(selectedList.words[currentIndex].word.length).fill(0).map((_, i) => (
+                            {/* Selected Placed Slots */}
+                            <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
+                                {Array(currentWord?.word.length || 0).fill(0).map((_, i) => (
                                     <div
                                         key={i}
-                                        onClick={() => i < scramblePlaced.length && removeScrambleTile(i)}
-                                        style={{
-                                            width: '50px', height: '60px',
-                                            border: '3px dashed #ccc', borderRadius: '10px',
-                                            display: 'flex', justifyContent: 'center', alignItems: 'center',
-                                            fontSize: '2rem', fontWeight: 'bold', textTransform: 'uppercase',
-                                            background: scramblePlaced[i] ? 'var(--primary-yellow)' : 'transparent',
-                                            cursor: scramblePlaced[i] ? 'pointer' : 'default',
-                                            borderStyle: scramblePlaced[i] ? 'solid' : 'dashed',
-                                            borderColor: scramblePlaced[i] ? '#e6b800' : '#ccc'
-                                        }}
+                                        onClick={() => i < scramblePlaced.length && handleRemoveScrambleTile(i)}
+                                        className={`letter-tile ${scramblePlaced[i] ? 'slot-filled' : 'slot-tile'}`}
                                     >
                                         {scramblePlaced[i]?.char || ''}
                                     </div>
                                 ))}
                             </div>
 
-                            {/* Available Letters */}
-                            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                                {scrambledLetters.map((lObj) => {
-                                    const isUsed = scramblePlaced.find(p => p.id === lObj.id);
+                            {/* Available Scrambled Letter Tiles */}
+                            <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                                {scrambledLetters.map((tile) => {
+                                    const isUsed = scramblePlaced.some(p => p.id === tile.id);
                                     return (
                                         <button
-                                            key={lObj.id}
-                                            onClick={() => handleScrambleTileClick(lObj)}
+                                            key={tile.id}
+                                            onClick={() => handlePlaceScrambleTile(tile)}
                                             disabled={isUsed}
-                                            style={{
-                                                width: '50px', height: '60px',
-                                                background: isUsed ? '#eee' : 'white',
-                                                color: isUsed ? 'transparent' : '#333',
-                                                border: '2px solid #ddd',
-                                                borderRadius: '10px',
-                                                fontSize: '2rem', fontWeight: 'bold', textTransform: 'uppercase',
-                                                cursor: isUsed ? 'default' : 'pointer',
-                                                boxShadow: isUsed ? 'none' : '0 4px 0 #ccc',
-                                                transform: isUsed ? 'translateY(4px)' : 'none'
-                                            }}
+                                            className={`letter-tile available-tile ${isUsed ? 'tile-disabled' : ''}`}
                                         >
-                                            {lObj.char}
+                                            {tile.char}
                                         </button>
                                     );
                                 })}
                             </div>
+
+                            <p style={{ fontSize: '0.85rem', color: '#94A3B8' }}>
+                                💡 Tap letters or use your keyboard to spell the word!
+                            </p>
                         </div>
                     )}
 
-                    {/* Global Feedback */}
+                    {/* Instant Feedback Message */}
                     {feedback && (
-                        <div className={`feedback ${feedback.includes('Correct') ? 'success' : 'error'}`} style={{ marginTop: '20px' }}>
-                            {feedback}
+                        <div className={`feedback-box ${feedback.type === 'success' ? 'feedback-success' : 'feedback-error'}`}>
+                            {feedback.message}
                         </div>
                     )}
-
                 </div>
-            )}
+            </div>
+        );
+    }
+
+    // --- VIEW: MAIN SELECTION ARENA (Lists & Mode Picker) ---
+    return (
+        <div style={{ maxWidth: '840px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                    <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '2rem', color: '#1E293B' }}>
+                        Ready to Play, {activeProfile.name}? 🚀
+                    </h2>
+                    <p style={{ color: '#64748B', fontSize: '1rem' }}>
+                        Select a list and your favorite game mode to begin!
+                    </p>
+                </div>
+
+                <button
+                    onClick={() => { sounds.playPop(); setIsCreatingList(true); }}
+                    className="btn btn-amber"
+                    style={{ padding: '10px 18px', fontSize: '0.95rem' }}
+                >
+                    <PlusCircle size={18} /> + Create Custom List
+                </button>
+            </div>
+
+            {/* Step 1 & Step 2 Layout */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '28px' }}>
+                {/* 1. Pick a Word List */}
+                <div className="card-elevated" style={{ padding: '20px', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', borderBottom: '1px solid #E2E8F0', paddingBottom: '10px' }}>
+                        <span style={{ fontWeight: 700, fontSize: '1.1rem', color: '#1E293B' }}>1. Choose Word List</span>
+                        <span style={{ fontSize: '0.85rem', color: '#64748B', fontWeight: 600 }}>
+                            {studentLists.length} Lists
+                        </span>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto', paddingRight: '4px' }}>
+                        {studentLists.map(list => {
+                            const isSelected = selectedList?.id === list.id;
+                            return (
+                                <div
+                                    key={list.id}
+                                    onClick={() => { sounds.playPop(); setSelectedList(list); }}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        padding: '12px 16px',
+                                        borderRadius: 'var(--radius-md)',
+                                        border: isSelected ? '2px solid #4F46E5' : '1px solid #E2E8F0',
+                                        background: isSelected ? '#EEF2FF' : '#FFFFFF',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                >
+                                    <div>
+                                        <div style={{ fontWeight: 700, color: isSelected ? '#3730A3' : '#1E293B', fontSize: '1rem' }}>
+                                            {list.title}
+                                        </div>
+                                        <div style={{ fontSize: '0.8rem', color: '#64748B' }}>
+                                            {list.words.length} words
+                                        </div>
+                                    </div>
+                                    {isSelected && <CheckCircle2 size={20} color="#4F46E5" />}
+                                </div>
+                            );
+                        })}
+
+                        {/* Quick Presets section if user wants more lists */}
+                        <div style={{ marginTop: '12px', borderTop: '1px dashed #E2E8F0', paddingTop: '10px' }}>
+                            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#64748B', marginBottom: '6px' }}>
+                                💡 Preset Curriculums (Click to Add):
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {PRESET_LISTS.map(preset => (
+                                    <button
+                                        key={preset.id}
+                                        onClick={() => {
+                                            sounds.playPop();
+                                            importPresetList(activeProfile.id, preset.id);
+                                        }}
+                                        style={{
+                                            fontSize: '0.75rem',
+                                            fontWeight: 600,
+                                            padding: '4px 8px',
+                                            borderRadius: '6px',
+                                            background: '#F1F5F9',
+                                            border: '1px solid #CBD5E1',
+                                            cursor: 'pointer',
+                                            color: '#475569'
+                                        }}
+                                    >
+                                        + {preset.icon} {preset.title}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* 2. Choose Game Arena Mode */}
+                <div className="card-elevated" style={{ padding: '20px' }}>
+                    <div style={{ fontWeight: 700, fontSize: '1.1rem', color: '#1E293B', marginBottom: '14px', borderBottom: '1px solid #E2E8F0', paddingBottom: '10px' }}>
+                        2. Choose Game Mode
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div
+                            onClick={() => { sounds.playPop(); setSelectedMode('classic'); }}
+                            className={`mode-card mode-classic`}
+                            style={{
+                                outline: selectedMode === 'classic' ? '3px solid #4F46E5' : 'none'
+                            }}
+                        >
+                            <Gamepad2 size={28} />
+                            <div>
+                                <strong style={{ fontSize: '1.05rem', display: 'block' }}>Classic Test</strong>
+                                <span style={{ fontSize: '0.85rem', opacity: 0.85 }}>Listen to the word and type it out.</span>
+                            </div>
+                        </div>
+
+                        <div
+                            onClick={() => { sounds.playPop(); setSelectedMode('memory'); }}
+                            className={`mode-card mode-memory`}
+                            style={{
+                                outline: selectedMode === 'memory' ? '3px solid #8B5CF6' : 'none'
+                            }}
+                        >
+                            <Brain size={28} />
+                            <div>
+                                <strong style={{ fontSize: '1.05rem', display: 'block' }}>Memory Flash</strong>
+                                <span style={{ fontSize: '0.85rem', opacity: 0.85 }}>See word for 3s, then spell from memory!</span>
+                            </div>
+                        </div>
+
+                        <div
+                            onClick={() => { sounds.playPop(); setSelectedMode('scramble'); }}
+                            className={`mode-card mode-scramble`}
+                            style={{
+                                outline: selectedMode === 'scramble' ? '3px solid #10B981' : 'none'
+                            }}
+                        >
+                            <Shuffle size={28} />
+                            <div>
+                                <strong style={{ fontSize: '1.05rem', display: 'block' }}>Word Scramble</strong>
+                                <span style={{ fontSize: '0.85rem', opacity: 0.85 }}>Unscramble the jumbled letter tiles.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Large Start Button */}
+            <div style={{ textAlign: 'center' }}>
+                <button
+                    onClick={handleStartGame}
+                    disabled={!selectedList || selectedList.words.length === 0}
+                    className="btn btn-coral"
+                    style={{
+                        padding: '16px 48px',
+                        fontSize: '1.3rem',
+                        borderRadius: 'var(--radius-lg)',
+                        width: '100%',
+                        maxWidth: '400px'
+                    }}
+                >
+                    <Play size={24} /> Play Now!
+                </button>
+            </div>
         </div>
     );
 }

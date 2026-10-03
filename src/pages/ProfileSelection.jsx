@@ -1,54 +1,120 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
+import { sounds } from '../utils/audio';
+import { Sparkles, PlusCircle, Trophy } from 'lucide-react';
 
 export default function ProfileSelection() {
     const navigate = useNavigate();
     const { profiles, setActiveProfileId } = useAppContext();
 
     const handleSelectProfile = (id) => {
+        sounds.playPop();
         setActiveProfileId(id);
         navigate('/play');
     };
 
     return (
-        <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-            <h2 style={{ textAlign: 'center', marginBottom: '30px', fontSize: '2rem', color: '#555' }}>
-                Who is playing today?
-            </h2>
+        <div style={{ maxWidth: '800px', margin: '0 auto', textAlign: 'center' }}>
+            <div style={{ marginBottom: '32px' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#FEF3C7', color: '#B45309', padding: '6px 16px', borderRadius: '9999px', fontWeight: 700, fontSize: '0.9rem', marginBottom: '12px' }}>
+                    <Sparkles size={16} /> Let's Practice Spelling!
+                </div>
+                <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '2.4rem', color: '#1E293B', letterSpacing: '-0.5px' }}>
+                    Who is playing today?
+                </h1>
+                <p style={{ color: '#64748B', fontSize: '1.1rem', marginTop: '6px' }}>
+                    Pick your character to continue your learning streak!
+                </p>
+            </div>
 
+            {/* Profile Grid */}
             <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
                 gap: '20px',
-                marginBottom: '40px'
+                marginBottom: '32px'
             }}>
                 {profiles.map(profile => (
-                    <div key={profile.id} style={{ position: 'relative' }}>
-                        <div
-                            onClick={() => handleSelectProfile(profile.id)}
-                            className="glass-panel interactive-hover"
-                            style={{
-                                cursor: 'pointer',
-                                textAlign: 'center',
-                                padding: '30px',
-                                borderTop: `8px solid ${profile.color}`
-                            }}
-                        >
-                            <div style={{ fontSize: '4rem', marginBottom: '10px' }}>{profile.avatar}</div>
-                            <h3 style={{ margin: '10px 0', fontSize: '1.5rem' }}>{profile.name}</h3>
-                            <p style={{ color: '#666', margin: '5px 0' }}>{profile.grade}</p>
-                            <div style={{ fontWeight: 'bold', color: '#ffb300', marginTop: '10px' }}>
-                                {profile.stars} ⭐
-                            </div>
+                    <div
+                        key={profile.id}
+                        onClick={() => handleSelectProfile(profile.id)}
+                        className="card-elevated"
+                        style={{
+                            cursor: 'pointer',
+                            padding: '28px 20px',
+                            textAlign: 'center',
+                            borderTop: `6px solid ${profile.color || '#4F46E5'}`,
+                            position: 'relative',
+                            overflow: 'hidden'
+                        }}
+                    >
+                        <div style={{
+                            fontSize: '4.5rem',
+                            marginBottom: '12px',
+                            transition: 'transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                            userSelect: 'none'
+                        }}>
+                            {profile.avatar}
+                        </div>
+
+                        <h3 style={{
+                            fontFamily: 'var(--font-display)',
+                            fontSize: '1.6rem',
+                            color: '#1E293B',
+                            marginBottom: '4px'
+                        }}>
+                            {profile.name}
+                        </h3>
+
+                        <div style={{
+                            display: 'inline-block',
+                            background: '#F1F5F9',
+                            color: '#475569',
+                            padding: '3px 12px',
+                            borderRadius: '9999px',
+                            fontSize: '0.85rem',
+                            fontWeight: 600,
+                            marginBottom: '14px'
+                        }}>
+                            {profile.grade || 'Speller'}
+                        </div>
+
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            background: '#FFFBEB',
+                            border: '1px solid #FDE68A',
+                            padding: '6px 12px',
+                            borderRadius: '12px',
+                            fontWeight: 700,
+                            color: '#B45309',
+                            fontSize: '1.1rem'
+                        }}>
+                            <span>⭐</span>
+                            <span>{profile.stars || 0} Stars</span>
                         </div>
                     </div>
                 ))}
-                {profiles.length === 0 && (
-                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '40px', color: '#888' }}>
-                        <p>No profiles found! Ask a parent to create one in the Parent Hub.</p>
-                    </div>
-                )}
+            </div>
+
+            {/* Actions for Parents or Empty State */}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <button
+                    onClick={() => { sounds.playPop(); navigate('/hub'); }}
+                    className="btn btn-secondary"
+                >
+                    <PlusCircle size={18} /> Add New Student Profile
+                </button>
+
+                <button
+                    onClick={() => { sounds.playPop(); navigate('/hub'); }}
+                    className="btn btn-secondary"
+                >
+                    <Trophy size={18} /> View Leaderboard
+                </button>
             </div>
         </div>
     );

@@ -4,92 +4,98 @@ import { useAppContext } from './context/AppContext';
 import ProfileSelection from './pages/ProfileSelection';
 import ParentHub from './pages/ParentHub';
 import PlayArena from './pages/PlayArena';
-import { Settings, Home, ArrowLeft } from 'lucide-react';
-import './index.css';
+import { Settings, Home, ArrowLeft, Volume2, VolumeX, Sparkles } from 'lucide-react';
+import { sounds } from './utils/audio';
 
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { activeProfile } = useAppContext();
+  const { activeProfile, ttsMuted, setTtsMuted } = useAppContext();
+
+  const isHome = location.pathname === '/';
+
+  const handleToggleSound = () => {
+    sounds.playPop();
+    setTtsMuted(!ttsMuted);
+  };
 
   return (
     <div className="app-container">
-      {/* Global Navigation / Header */}
-      <header style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        background: 'var(--primary-red)',
-        padding: '10px 20px',
-        borderRadius: '20px 20px 0 0',
-        color: 'white'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          {/* Global Back Button (hide on home) */}
-          {location.pathname !== '/' && (
+      {/* Top Header & Navigation */}
+      <header className="app-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {!isHome && (
             <button
-              onClick={() => navigate(-1)}
-              style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', cursor: 'pointer', padding: '8px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              onClick={() => { sounds.playPop(); navigate(-1); }}
+              className="btn-icon"
               title="Go Back"
+              aria-label="Back"
             >
               <ArrowLeft size={20} />
             </button>
           )}
 
-          {/* Global Home Button (hide on home) */}
-          {location.pathname !== '/' && (
-            <button
-              onClick={() => navigate('/')}
-              style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', cursor: 'pointer', padding: '8px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              title="Home"
-            >
-              <Home size={20} />
-            </button>
-          )}
-
           <div
-            onClick={() => navigate('/')}
-            style={{ cursor: 'pointer', fontFamily: "'Fredoka One', cursive", fontSize: '1.5rem', marginLeft: location.pathname !== '/' ? '10px' : '0', display: 'flex', alignItems: 'center', gap: '8px' }}
+            onClick={() => { sounds.playPop(); navigate('/'); }}
+            className="logo-brand"
+            title="Apple Bee Home"
           >
-            🍎 Apple Bee 🐝
-            <span style={{ fontSize: '0.8rem', background: '#ffeb3b', color: '#d84315', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold', fontFamily: 'sans-serif' }}>v2.0</span>
+            <span style={{ fontSize: '1.8rem', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))' }}>🍎</span>
+            <span className="logo-title">Apple Bee</span>
+            <span className="badge-version">v2.0</span>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+        {/* Header Right Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Active Profile Pill */}
           {activeProfile && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '5px 12px', borderRadius: '20px' }}>
+            <div
+              onClick={() => { sounds.playPop(); navigate('/'); }}
+              className="profile-chip"
+              style={{ cursor: 'pointer' }}
+              title="Switch Player"
+            >
               <span style={{ fontSize: '1.2rem' }}>{activeProfile.avatar}</span>
-              <span style={{ fontWeight: 'bold' }}>{activeProfile.stars} ⭐</span>
+              <span style={{ fontWeight: 700 }}>{activeProfile.name}</span>
+              <span style={{ color: '#F59E0B', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                ⭐ {activeProfile.stars || 0}
+              </span>
             </div>
           )}
 
+          {/* Quick Sound Toggle */}
           <button
-            onClick={() => navigate('/hub')}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'white',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-            title="Parent Hub"
+            onClick={handleToggleSound}
+            className="btn-icon"
+            style={{ color: ttsMuted ? '#94A3B8' : '#4F46E5' }}
+            title={ttsMuted ? "Unmute Sound" : "Mute Sound"}
+            aria-label="Toggle Sound"
           >
-            <Settings size={24} />
+            {ttsMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+          </button>
+
+          {/* Parent Hub Button */}
+          <button
+            onClick={() => { sounds.playPop(); navigate('/hub'); }}
+            className="btn-icon"
+            style={{ background: location.pathname === '/hub' ? '#EEF2FF' : '#F1F5F9', color: location.pathname === '/hub' ? '#4F46E5' : '#475569' }}
+            title="Parent Hub"
+            aria-label="Parent Hub"
+          >
+            <Settings size={20} />
           </button>
         </div>
       </header>
 
       {/* Main Content Area */}
-      <div className="game-board" style={{ borderRadius: '0 0 30px 30px', borderTop: 'none', padding: '20px' }}>
+      <main className="glass-panel" style={{ padding: '24px', minHeight: '520px' }}>
         <Routes>
           <Route path="/" element={<ProfileSelection />} />
           <Route path="/hub" element={<ParentHub />} />
           <Route path="/play" element={<PlayArena />} />
         </Routes>
-      </div>
+      </main>
     </div>
   );
 }

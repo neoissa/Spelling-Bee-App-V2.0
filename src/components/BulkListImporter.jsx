@@ -4,7 +4,7 @@ import { sounds } from '../utils/audio';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import {
     ClipboardList, Sparkles, CheckCircle2, Trash2,
-    X, AlertCircle, Loader2, ArrowRight
+    X, AlertCircle, Loader2, ArrowRight, Zap
 } from 'lucide-react';
 
 export default function BulkListImporter({ onListCreated, onCancel, targetProfileId }) {
@@ -17,58 +17,93 @@ export default function BulkListImporter({ onListCreated, onCancel, targetProfil
     const [step, setStep] = useState('input');
     const [errorMessage, setErrorMessage] = useState('');
 
-    const handleParseText = () => {
+    // Enhanced Parser for any format: spaces, tabs, challenge words labels, numbers, colons
+    const handleParseText = (inputTextToParse) => {
         setErrorMessage('');
-        if (!rawText.trim()) {
+        const textToProcess = (typeof inputTextToParse === 'string' ? inputTextToParse : rawText).trim();
+
+        if (!textToProcess) {
             setErrorMessage('Please paste or type some words first.');
             return;
         }
 
         sounds.playPop();
 
-        const lines = rawText.split(/[\n,;]+/).map(l => l.trim()).filter(Boolean);
+        let currentCategory = 'Regular';
         const extracted = [];
 
+        // Normalize section headers like 'Challenge Words:', 'Bonus Words:', 'Unit 5:', etc.
+        const normalized = textToProcess
+            .replace(/(challenge\s+words?|bonus\s+words?|review\s+words?|vocabulary|spelling\s+words?|high\s+frequency\s+words?)\s*:\s*/gi, (_, p1) => {
+                return '\n__SECTION__' + p1.trim() + '__\n';
+            });
+
+        const lines = normalized.split(/\n+/).map(l => l.trim()).filter(Boolean);
+
         lines.forEach(line => {
-            let cleaned = line.replace(/^[\d]+[\.\)\-\:\s]+/, '').replace(/^[\-\*\•\>\s]+/, '').trim();
-            if (!cleaned) return;
+            if (line.startsWith('__SECTION__') && line.endsWith('__')) {
+                currentCategory = line.replace(/__SECTION__/g, '').replace(/__/g, '').trim();
+                return;
+            }
 
-            let word = '';
-            let hint = '';
+            // Check if line has a single definition pattern like "word - hint" or "word : hint" or "word (hint)"
+            const dashMatch = line.match(/^([a-zA-Z\s'-]{1,35})\s*[-:–—]\s*(.+)$/);
+            const parenMatch = line.match(/^([a-zA-Z\s'-]{1,35})\s*\((.+)\)$/);
 
-            const dashMatch = cleaned.match(/^([a-zA-Z\s'-]+)\s*[-:–—]\s*(.+)$/);
-            const parenMatch = cleaned.match(/^([a-zA-Z\s'-]+)\s*\((.+)\)$/);
+            // Check if line is multi-word separated by multiple spaces, tabs, commas, or semicolons
+            const tokens = line.split(/[\t,;]+|\s{2,}/).map(t => t.trim()).filter(Boolean);
 
-            if (dashMatch) {
-                word = dashMatch[1].trim().toLowerCase();
-                hint = dashMatch[2].trim();
-            } else if (parenMatch) {
-                word = parenMatch[1].trim().toLowerCase();
-                hint = parenMatch[2].trim();
-            } else {
-                const wordsInLine = cleaned.split(/\s+/).filter(Boolean);
-                if (wordsInLine.length === 1) {
-                    word = wordsInLine[0].trim().toLowerCase();
-                    hint = `Practice spelling "${word}"`;
-                } else {
-                    wordsInLine.forEach(w => {
-                        const cleanW = w.replace(/[^a-zA-Z'-]/g, '').trim().toLowerCase();
-                        if (cleanW) {
+            if (tokens.length > 1) {
+                tokens.forEach(token => {
+                    const words = token.split(/\s+/).filter(Boolean);
+                    words.forEach(w => {
+                        const cleanW = w.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').trim().toLowerCase();
+                        if (cleanW && cleanW.length > 0 && !cleanW.includes(':')) {
                             extracted.push({
                                 word: cleanW,
-                                hint: `Practice spelling "${cleanW}"`
+                                hint: currentCategory.toLowerCase().includes('challenge')
+                                    ? `🌟 Challenge Word: ${cleanW}`
+                                    : currentCategory.toLowerCase().includes('bonus')
+                                        ? `⭐ Bonus Word: ${cleanW}`
+                                        : `Spelling word: "${cleanW}"`,
+                                isChallenge: currentCategory.toLowerCase().includes('challenge')
                             });
                         }
                     });
-                    return;
+                });
+            } else if (dashMatch && !dashMatch[1].includes('   ')) {
+                const cleanWord = dashMatch[1].replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').trim().toLowerCase();
+                if (cleanWord) {
+                    extracted.push({
+                        word: cleanWord,
+                        hint: dashMatch[2].trim(),
+                        isChallenge: currentCategory.toLowerCase().includes('challenge')
+                    });
                 }
-            }
-
-            const cleanWord = word.replace(/[^a-zA-Z'-]/g, '').trim();
-            if (cleanWord) {
-                extracted.push({
-                    word: cleanWord,
-                    hint: hint || `Practice spelling "${cleanWord}"`
+            } else if (parenMatch && !parenMatch[1].includes('   ')) {
+                const cleanWord = parenMatch[1].replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').trim().toLowerCase();
+                if (cleanWord) {
+                    extracted.push({
+                        word: cleanWord,
+                        hint: parenMatch[2].trim(),
+                        isChallenge: currentCategory.toLowerCase().includes('challenge')
+                    });
+                }
+            } else {
+                const words = line.split(/\s+/).filter(Boolean);
+                words.forEach(w => {
+                    const cleanW = w.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').trim().toLowerCase();
+                    if (cleanW && cleanW.length > 0) {
+                        extracted.push({
+                            word: cleanW,
+                            hint: currentCategory.toLowerCase().includes('challenge')
+                                ? `🌟 Challenge Word: ${cleanW}`
+                                : currentCategory.toLowerCase().includes('bonus')
+                                    ? `⭐ Bonus Word: ${cleanW}`
+                                    : `Spelling word: "${cleanW}"`,
+                            isChallenge: currentCategory.toLowerCase().includes('challenge')
+                        });
+                    }
                 });
             }
         });
@@ -79,6 +114,7 @@ export default function BulkListImporter({ onListCreated, onCancel, targetProfil
             return;
         }
 
+        // Deduplicate while preserving challenge flags
         const unique = [];
         const seen = new Set();
         extracted.forEach(item => {
@@ -152,7 +188,7 @@ Example: [{"word": "star", "hint": "Twinkles in the night sky."}]`;
             id: `bulk-list-${Date.now()}`,
             profileId: targetId,
             title: `📋 ${listTitle.trim()}`,
-            words: parsedWords,
+            words: parsedWords.map(w => ({ word: w.word, hint: w.hint })),
             scheduledDate: ''
         };
 
@@ -164,8 +200,15 @@ Example: [{"word": "star", "hint": "Twinkles in the night sky."}]`;
         }
     };
 
+    const handleLoadSampleList = () => {
+        const sample = 'increase   yesterday   acquaint   achievement   reproach   marrow   virtue   continue   betray   array   campaign   revenue   meadow   deceive   appeal   agreement   streamline   proceed   remainder   straight   Challenge Words:mayonnaise   reasonable   conceited';
+        setRawText(sample);
+        setListTitle('Weekly Spelling & Challenge List');
+        sounds.playPop();
+    };
+
     return (
-        <div className="glass-panel animate-fade" style={{ padding: '24px', maxWidth: '640px', margin: '0 auto' }}>
+        <div className="glass-panel animate-fade" style={{ padding: '24px', maxWidth: '680px', margin: '0 auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ background: '#EEF2FF', color: '#4F46E5', padding: '8px', borderRadius: '12px' }}>
@@ -176,7 +219,7 @@ Example: [{"word": "star", "hint": "Twinkles in the night sky."}]`;
                             Paste & Import Word List
                         </h3>
                         <p style={{ color: '#64748B', fontSize: '0.85rem', margin: '2px 0 0 0' }}>
-                            Paste a list of words from anywhere (separated by commas, lines, or numbers)
+                            Paste words separated by spaces, tabs, commas, or with "Challenge Words:" headers!
                         </p>
                     </div>
                 </div>
@@ -197,34 +240,35 @@ Example: [{"word": "star", "hint": "Twinkles in the night sky."}]`;
 
             {step === 'input' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    <div>
-                        <label style={{ display: 'block', fontWeight: 700, fontSize: '0.9rem', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <label style={{ fontWeight: 700, fontSize: '0.9rem' }}>
                             List Title (Optional):
                         </label>
-                        <input
-                            type="text"
-                            value={listTitle}
-                            onChange={e => setListTitle(e.target.value)}
-                            placeholder="e.g., Week 3 Spelling Words, Science Vocabulary"
-                            className="input-field"
-                        />
+                        <button
+                            type="button"
+                            onClick={handleLoadSampleList}
+                            style={{ background: 'none', border: 'none', color: '#4F46E5', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
+                        >
+                            <Zap size={14} /> Paste Example List
+                        </button>
                     </div>
+
+                    <input
+                        type="text"
+                        value={listTitle}
+                        onChange={e => setListTitle(e.target.value)}
+                        placeholder="e.g., Week 5 Spelling Words"
+                        className="input-field"
+                    />
 
                     <div>
                         <label style={{ display: 'block', fontWeight: 700, fontSize: '0.9rem', marginBottom: '6px' }}>
-                            Paste Word List Here:
+                            Paste Any Word List Here:
                         </label>
                         <textarea
                             value={rawText}
                             onChange={e => setRawText(e.target.value)}
-                            placeholder={`Paste words in any format, e.g.:
-
-apple, banana, orange, strawberry, grape
-
-Or line-by-line with hints:
-1. planet - Earth is one
-2. rocket - Blasts into outer space
-3. galaxy - System of millions of stars`}
+                            placeholder="Paste words separated by spaces, tabs, newlines, or headers like:&#10;&#10;increase   yesterday   acquaint   achievement   reproach   marrow   virtue   continue   betray   array   campaign   revenue   meadow   deceive   appeal   agreement   streamline   proceed   remainder   straight   Challenge Words:mayonnaise   reasonable   conceited"
                             rows={8}
                             className="input-field"
                             style={{
@@ -238,16 +282,14 @@ Or line-by-line with hints:
                         />
                     </div>
 
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        <button
-                            onClick={handleParseText}
-                            className="btn btn-primary"
-                            style={{ flex: 1, padding: '14px', fontSize: '1.05rem' }}
-                            disabled={!rawText.trim()}
-                        >
-                            Process & Review Words <ArrowRight size={18} />
-                        </button>
-                    </div>
+                    <button
+                        onClick={() => handleParseText(rawText)}
+                        className="btn btn-primary"
+                        style={{ padding: '14px', fontSize: '1.05rem' }}
+                        disabled={!rawText.trim()}
+                    >
+                        Process & Review Words <ArrowRight size={18} />
+                    </button>
                 </div>
             )}
 
@@ -269,7 +311,7 @@ Or line-by-line with hints:
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                         <span style={{ fontWeight: 700, color: '#3730A3', fontSize: '0.95rem' }}>
-                            ✨ Ready to Import: {parsedWords.length} Words
+                            ✨ Detected {parsedWords.length} Words ({parsedWords.filter(w => w.isChallenge).length} Challenge)
                         </span>
 
                         <div style={{ display: 'flex', gap: '6px' }}>
@@ -279,7 +321,7 @@ Or line-by-line with hints:
                                     disabled={isAutoHinting}
                                     className="btn btn-secondary"
                                     style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-                                    title="Auto-generate fun kid hints for these words with Gemini"
+                                    title="Auto-generate fun kid hints for these words with Gemini AI"
                                 >
                                     {isAutoHinting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                                     Auto AI Hints
@@ -300,7 +342,7 @@ Or line-by-line with hints:
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '8px',
-                        maxHeight: '280px',
+                        maxHeight: '300px',
                         overflowY: 'auto',
                         paddingRight: '4px'
                     }}>
@@ -312,16 +354,23 @@ Or line-by-line with hints:
                                     justifyContent: 'space-between',
                                     alignItems: 'center',
                                     padding: '10px 14px',
-                                    background: '#F8FAFC',
+                                    background: item.isChallenge ? '#FFFBEB' : '#F8FAFC',
                                     borderRadius: 'var(--radius-sm)',
-                                    border: '1px solid #E2E8F0',
+                                    border: item.isChallenge ? '1px solid #FDE68A' : '1px solid #E2E8F0',
                                     gap: '10px'
                                 }}
                             >
                                 <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                                    <strong style={{ fontSize: '1.05rem', color: '#1E293B', textTransform: 'capitalize' }}>
-                                        {item.word}
-                                    </strong>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <strong style={{ fontSize: '1.05rem', color: '#1E293B', textTransform: 'capitalize' }}>
+                                            {item.word}
+                                        </strong>
+                                        {item.isChallenge && (
+                                            <span style={{ fontSize: '0.75rem', fontWeight: 700, background: '#FEF3C7', color: '#B45309', padding: '2px 6px', borderRadius: '4px' }}>
+                                                CHALLENGE
+                                            </span>
+                                        )}
+                                    </div>
                                     <input
                                         type="text"
                                         value={item.hint}

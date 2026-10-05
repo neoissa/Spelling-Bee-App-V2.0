@@ -504,33 +504,84 @@ Example format:
                             </div>
 
                             <div>
-                                <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '8px', color: '#475569' }}>
-                                    Word Practice Analysis:
+                                <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '10px', color: '#475569' }}>
+                                    🧠 Spaced Repetition Mastery:
                                 </div>
                                 {(() => {
                                     const mastery = currentStudent.wordMastery || {};
-                                    const needsPractice = Object.entries(mastery)
-                                        .filter(([_, stats]) => stats.attempts > 0 && (stats.correct / stats.attempts) <= 0.5)
-                                        .map(([w]) => w);
+                                    const trickyEntries = Object.entries(mastery).filter(
+                                        ([_, stats]) => !stats.graduated && (stats.attempts > stats.correct || (stats.consecutiveCorrect || 0) < 3)
+                                    );
+                                    const graduatedEntries = Object.entries(mastery).filter(
+                                        ([_, stats]) => stats.graduated || (stats.consecutiveCorrect || 0) >= 3
+                                    );
 
-                                    if (needsPractice.length > 0) {
-                                        return (
-                                            <div>
-                                                <div style={{ fontSize: '0.8rem', color: '#DC2626', marginBottom: '6px' }}>Words needing more practice:</div>
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                                    {needsPractice.map(w => (
-                                                        <span key={w} style={{ background: '#FEE2E2', color: '#991B1B', padding: '3px 8px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 600 }}>
-                                                            {w}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        );
-                                    }
                                     return (
-                                        <p style={{ color: '#059669', fontSize: '0.9rem', fontStyle: 'italic' }}>
-                                            🎉 Great job! No struggling words detected.
-                                        </p>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                                            {/* Tricky Words Section */}
+                                            {trickyEntries.length > 0 ? (
+                                                <div>
+                                                    <div style={{ fontSize: '0.85rem', color: '#B45309', fontWeight: 700, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                        <span>🔥 Needs Practice ({trickyEntries.length} words):</span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                        {trickyEntries.map(([w, stats]) => (
+                                                            <span
+                                                                key={w}
+                                                                style={{
+                                                                    background: '#FEF3C7',
+                                                                    color: '#92400E',
+                                                                    padding: '4px 10px',
+                                                                    borderRadius: '6px',
+                                                                    fontSize: '0.8rem',
+                                                                    fontWeight: 600,
+                                                                    border: '1px solid #FDE68A',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px'
+                                                                }}
+                                                            >
+                                                                {w}
+                                                                <span style={{ color: '#F59E0B', fontSize: '0.7rem' }}>
+                                                                    {(stats.consecutiveCorrect || 0) === 0 ? '☆☆☆' : (stats.consecutiveCorrect || 0) === 1 ? '⭐☆☆' : '⭐⭐☆'}
+                                                                </span>
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div style={{ background: '#ECFDF5', padding: '10px 14px', borderRadius: '8px', color: '#047857', fontSize: '0.85rem', fontWeight: 600 }}>
+                                                    🎉 All tricky words mastered! No struggling words currently.
+                                                </div>
+                                            )}
+
+                                            {/* Mastered Words Section */}
+                                            {graduatedEntries.length > 0 && (
+                                                <div>
+                                                    <div style={{ fontSize: '0.85rem', color: '#047857', fontWeight: 700, marginBottom: '6px' }}>
+                                                        🎓 Graduated & Mastered ({graduatedEntries.length} words):
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                        {graduatedEntries.map(([w]) => (
+                                                            <span
+                                                                key={w}
+                                                                style={{
+                                                                    background: '#ECFDF5',
+                                                                    color: '#065F46',
+                                                                    padding: '4px 10px',
+                                                                    borderRadius: '6px',
+                                                                    fontSize: '0.8rem',
+                                                                    fontWeight: 600,
+                                                                    border: '1px solid #A7F3D0'
+                                                                }}
+                                                            >
+                                                                ⭐ {w}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     );
                                 })()}
                             </div>

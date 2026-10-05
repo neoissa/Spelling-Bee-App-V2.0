@@ -4,9 +4,12 @@ import { useAppContext } from '../context/AppContext';
 import { sounds, speakWord } from '../utils/audio';
 import { triggerConfetti } from '../utils/confetti';
 import { PRESET_LISTS } from '../data/presetLists';
+import PhotoListScanner from '../components/PhotoListScanner';
+import BulkListImporter from '../components/BulkListImporter';
 import {
     ArrowLeft, Volume2, Gamepad2, Brain, Shuffle, PlusCircle,
-    Trash2, Sparkles, Flame, CheckCircle2, RotateCcw, Award, Play
+    Trash2, Sparkles, Flame, CheckCircle2, RotateCcw, Award, Play,
+    Camera, ClipboardList
 } from 'lucide-react';
 
 export default function PlayArena() {
@@ -22,20 +25,22 @@ export default function PlayArena() {
     } = useAppContext();
 
     const [selectedList, setSelectedList] = useState(null);
-    const [selectedMode, setSelectedMode] = useState('classic'); // 'classic', 'memory', 'scramble'
+    const [selectedMode, setSelectedMode] = useState('classic');
 
-    // Child List Creation
+    // Modals / Creation Views
     const [isCreatingList, setIsCreatingList] = useState(false);
+    const [isScanningPhoto, setIsScanningPhoto] = useState(false);
+    const [isBulkImporting, setIsBulkImporting] = useState(false);
     const [newListTitle, setNewListTitle] = useState('');
     const [newWord, setNewWord] = useState('');
     const [newHint, setNewHint] = useState('');
     const [createdWords, setCreatedWords] = useState([]);
 
-    // Game Engine State
+    // Game State
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [userInput, setUserInput] = useState('');
-    const [feedback, setFeedback] = useState(null); // { type: 'success' | 'error', message: string }
+    const [feedback, setFeedback] = useState(null);
     const [gameOver, setGameOver] = useState(false);
     const [score, setScore] = useState(0);
     const [streak, setStreak] = useState(0);
@@ -52,24 +57,20 @@ export default function PlayArena() {
 
     const inputRef = useRef(null);
 
-    // Redirect if no active profile
     useEffect(() => {
         if (!activeProfile) {
             navigate('/');
         }
     }, [activeProfile, navigate]);
 
-    // Student's personal lists
     const studentLists = customLists.filter(list => list.profileId === activeProfile?.id);
 
-    // Auto-select first list if available and none selected
     useEffect(() => {
         if (!selectedList && studentLists.length > 0) {
             setSelectedList(studentLists[0]);
         }
     }, [studentLists, selectedList]);
 
-    // Handle Word Initialization per Round
     useEffect(() => {
         if (!isPlaying || !selectedList || gameOver) return;
 
@@ -79,7 +80,6 @@ export default function PlayArena() {
         setUserInput('');
         setFeedback(null);
 
-        // Announce word with TTS
         speakWord(currentWordObj.word);
 
         if (selectedMode === 'memory') {
@@ -100,7 +100,6 @@ export default function PlayArena() {
 
             return () => clearInterval(timer);
         } else if (selectedMode === 'scramble') {
-            // Shuffle word letters
             const chars = currentWordObj.word.split('').map((char, id) => ({ char, id }));
             for (let i = chars.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
@@ -109,12 +108,10 @@ export default function PlayArena() {
             setScrambledLetters(chars);
             setScramblePlaced([]);
         } else {
-            // Classic mode auto focus
             setTimeout(() => inputRef.current?.focus(), 100);
         }
     }, [currentIndex, isPlaying, selectedMode, selectedList, gameOver]);
 
-    // Keyboard support for scramble mode
     useEffect(() => {
         if (!isPlaying || selectedMode !== 'scramble' || gameOver || !selectedList) return;
 
@@ -129,7 +126,6 @@ export default function PlayArena() {
                 }
             } else if (/^[a-zA-Z]$/.test(e.key)) {
                 const pressedChar = e.key.toLowerCase();
-                // Find next available matching tile
                 const available = scrambledLetters.find(l =>
                     l.char.toLowerCase() === pressedChar && !scramblePlaced.some(p => p.id === l.id)
                 );
@@ -143,7 +139,6 @@ export default function PlayArena() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isPlaying, selectedMode, scrambledLetters, scramblePlaced, currentIndex, selectedList, gameOver]);
 
-    // Submit / Evaluate Answer
     const handleEvaluateWord = (isCorrect) => {
         const currentWord = selectedList.words[currentIndex]?.word;
         recordWordAttempt(currentWord, isCorrect);
@@ -169,7 +164,6 @@ export default function PlayArena() {
                 if (currentIndex < selectedList.words.length - 1) {
                     setCurrentIndex(i => i + 1);
                 } else {
-                    // Completed whole list!
                     setGameOver(true);
                     sounds.playVictory();
                     triggerConfetti();
@@ -241,7 +235,6 @@ export default function PlayArena() {
         setStreak(0);
     };
 
-    // Child List Creation Handler
     const handleSaveNewList = (e) => {
         e.preventDefault();
         if (!newListTitle.trim() || createdWords.length === 0) return;
@@ -276,7 +269,32 @@ export default function PlayArena() {
 
     if (!activeProfile) return null;
 
-    // --- VIEW: CHILD LIST CREATOR ---
+    if (isScanningPhoto) {
+        return (
+            <PhotoListScanner
+                targetProfileId={activeProfile.id}
+                onCancel={() => setIsScanningPhoto(false)}
+                onListCreated={(createdList) => {
+                    setSelectedList(createdList);
+                    setIsScanningPhoto(false);
+                }}
+            />
+        );
+    }
+
+    if (isBulkImporting) {
+        return (
+            <BulkListImporter
+                targetProfileId={activeProfile.id}
+                onCancel={() => setIsBulkImporting(false)}
+                onListCreated={(createdList) => {
+                    setSelectedList(createdList);
+                    setIsBulkImporting(false);
+                }}
+            />
+        );
+    }
+
     if (isCreatingList) {
         return (
             <div className="animate-fade" style={{ maxWidth: '640px', margin: '0 auto' }}>
@@ -329,7 +347,6 @@ export default function PlayArena() {
                         />
                     </form>
 
-                    {/* Word List Preview */}
                     <div style={{ marginBottom: '20px' }}>
                         <div style={{ fontWeight: 700, marginBottom: '8px', color: '#475569' }}>
                             Words Added ({createdWords.length}):
@@ -366,7 +383,6 @@ export default function PlayArena() {
         );
     }
 
-    // --- VIEW: GAMEPLAY SCREEN ---
     if (isPlaying && selectedList) {
         const currentWord = selectedList.words[currentIndex];
 
@@ -381,7 +397,6 @@ export default function PlayArena() {
                         You completed <strong>{selectedList.title}</strong>!
                     </p>
 
-                    {/* Stats Grid */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '32px' }}>
                         <div className="glass-panel" style={{ padding: '16px' }}>
                             <div style={{ fontSize: '1.8rem', fontWeight: 700, color: '#4F46E5' }}>{score}</div>
@@ -413,7 +428,6 @@ export default function PlayArena() {
 
         return (
             <div className="animate-fade" style={{ maxWidth: '640px', margin: '0 auto' }}>
-                {/* Arena Top Bar */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <button
                         onClick={handleResetArena}
@@ -435,7 +449,6 @@ export default function PlayArena() {
                     </div>
                 </div>
 
-                {/* Progress Bar */}
                 <div style={{ marginBottom: '24px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#64748B', fontWeight: 700, marginBottom: '6px' }}>
                         <span>Word {currentIndex + 1} of {selectedList.words.length}</span>
@@ -451,9 +464,7 @@ export default function PlayArena() {
                     </div>
                 </div>
 
-                {/* Game Card */}
                 <div className="glass-panel" style={{ padding: '32px 24px', textAlign: 'center' }}>
-                    {/* Audio Hear Word Button */}
                     {!ttsMuted && (
                         <button
                             onClick={() => speakWord(currentWord?.word)}
@@ -473,7 +484,6 @@ export default function PlayArena() {
                         </button>
                     )}
 
-                    {/* Hint / Context */}
                     <div style={{
                         background: '#F8FAFC',
                         border: '1px dashed #CBD5E1',
@@ -487,7 +497,6 @@ export default function PlayArena() {
                         "{currentWord?.hint || 'Listen carefully to the word'}"
                     </div>
 
-                    {/* GAME MODE 1: CLASSIC TEST */}
                     {selectedMode === 'classic' && (
                         <form onSubmit={handleTextSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                             <input
@@ -513,7 +522,6 @@ export default function PlayArena() {
                         </form>
                     )}
 
-                    {/* GAME MODE 2: MEMORY MASTER */}
                     {selectedMode === 'memory' && (
                         <div>
                             {isShowingFlash ? (
@@ -558,10 +566,8 @@ export default function PlayArena() {
                         </div>
                     )}
 
-                    {/* GAME MODE 3: WORD SCRAMBLE */}
                     {selectedMode === 'scramble' && (
                         <div>
-                            {/* Selected Placed Slots */}
                             <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
                                 {Array(currentWord?.word.length || 0).fill(0).map((_, i) => (
                                     <div
@@ -574,7 +580,6 @@ export default function PlayArena() {
                                 ))}
                             </div>
 
-                            {/* Available Scrambled Letter Tiles */}
                             <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
                                 {scrambledLetters.map((tile) => {
                                     const isUsed = scramblePlaced.some(p => p.id === tile.id);
@@ -597,7 +602,6 @@ export default function PlayArena() {
                         </div>
                     )}
 
-                    {/* Instant Feedback Message */}
                     {feedback && (
                         <div className={`feedback-box ${feedback.type === 'success' ? 'feedback-success' : 'feedback-error'}`}>
                             {feedback.message}
@@ -608,7 +612,6 @@ export default function PlayArena() {
         );
     }
 
-    // --- VIEW: MAIN SELECTION ARENA (Lists & Mode Picker) ---
     return (
         <div style={{ maxWidth: '840px', margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
@@ -621,18 +624,34 @@ export default function PlayArena() {
                     </p>
                 </div>
 
-                <button
-                    onClick={() => { sounds.playPop(); setIsCreatingList(true); }}
-                    className="btn btn-amber"
-                    style={{ padding: '10px 18px', fontSize: '0.95rem' }}
-                >
-                    <PlusCircle size={18} /> + Create Custom List
-                </button>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                        onClick={() => { sounds.playPop(); setIsBulkImporting(true); }}
+                        className="btn btn-secondary"
+                        style={{ padding: '10px 16px', fontSize: '0.95rem' }}
+                    >
+                        <ClipboardList size={18} /> 📋 Paste Words
+                    </button>
+
+                    <button
+                        onClick={() => { sounds.playPop(); setIsScanningPhoto(true); }}
+                        className="btn btn-primary"
+                        style={{ padding: '10px 16px', fontSize: '0.95rem' }}
+                    >
+                        <Camera size={18} /> 📸 Scan Photo
+                    </button>
+
+                    <button
+                        onClick={() => { sounds.playPop(); setIsCreatingList(true); }}
+                        className="btn btn-amber"
+                        style={{ padding: '10px 16px', fontSize: '0.95rem' }}
+                    >
+                        <PlusCircle size={18} /> + Custom List
+                    </button>
+                </div>
             </div>
 
-            {/* Step 1 & Step 2 Layout */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '28px' }}>
-                {/* 1. Pick a Word List */}
                 <div className="card-elevated" style={{ padding: '20px', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', borderBottom: '1px solid #E2E8F0', paddingBottom: '10px' }}>
                         <span style={{ fontWeight: 700, fontSize: '1.1rem', color: '#1E293B' }}>1. Choose Word List</span>
@@ -673,7 +692,6 @@ export default function PlayArena() {
                             );
                         })}
 
-                        {/* Quick Presets section if user wants more lists */}
                         <div style={{ marginTop: '12px', borderTop: '1px dashed #E2E8F0', paddingTop: '10px' }}>
                             <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#64748B', marginBottom: '6px' }}>
                                 💡 Preset Curriculums (Click to Add):
@@ -705,7 +723,6 @@ export default function PlayArena() {
                     </div>
                 </div>
 
-                {/* 2. Choose Game Arena Mode */}
                 <div className="card-elevated" style={{ padding: '20px' }}>
                     <div style={{ fontWeight: 700, fontSize: '1.1rem', color: '#1E293B', marginBottom: '14px', borderBottom: '1px solid #E2E8F0', paddingBottom: '10px' }}>
                         2. Choose Game Mode
@@ -757,7 +774,6 @@ export default function PlayArena() {
                 </div>
             </div>
 
-            {/* Large Start Button */}
             <div style={{ textAlign: 'center' }}>
                 <button
                     onClick={handleStartGame}

@@ -3,11 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { sounds } from '../utils/audio';
 import { PRESET_LISTS } from '../data/presetLists';
+import PhotoListScanner from '../components/PhotoListScanner';
+import BulkListImporter from '../components/BulkListImporter';
 import {
     Settings, Users, Key, BookOpen, Trash2, Plus, ArrowLeft,
-    Wand2, Loader2, PlusCircle, Trophy, Sparkles, Check, Download
+    Wand2, Loader2, Trophy, Sparkles, Camera, ClipboardList
 } from 'lucide-react';
-import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const AVATARS = ['🦁', '🦄', '🐶', '🐱', '🦊', '🐼', '🐯', '🐰', '🚀', '🦖', '🌟', '🐬'];
 const COLORS = ['#4F46E5', '#EC4899', '#10B981', '#F59E0B', '#8B5CF6', '#06B6D4'];
@@ -30,25 +32,24 @@ export default function ParentHub() {
 
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [pin, setPin] = useState('');
-    const [activeTab, setActiveTab] = useState('profiles'); // 'profiles', 'lists', 'ai', 'leaderboard', 'settings'
+    const [activeTab, setActiveTab] = useState('profiles');
 
-    // Selected Student for list management
     const [activeStudentId, setActiveStudentId] = useState(profiles[0]?.id || null);
 
-    // Profile Creation State
     const [showAddStudent, setShowAddStudent] = useState(false);
     const [newName, setNewName] = useState('');
     const [newAvatar, setNewAvatar] = useState(AVATARS[0]);
     const [newColor, setNewColor] = useState(COLORS[0]);
     const [newGrade, setNewGrade] = useState('1st Grade');
 
-    // List Management State
     const [editingListId, setEditingListId] = useState(null);
     const [newListTitle, setNewListTitle] = useState('');
     const [newWord, setNewWord] = useState('');
     const [newHint, setNewHint] = useState('');
 
-    // AI Generator State
+    const [showPhotoScanner, setShowPhotoScanner] = useState(false);
+    const [showBulkImporter, setShowBulkImporter] = useState(false);
+
     const [aiTopic, setAiTopic] = useState('');
     const [aiGrade, setAiGrade] = useState('1st Grade');
     const [isGenerating, setIsGenerating] = useState(false);
@@ -149,7 +150,6 @@ export default function ParentHub() {
         }
     };
 
-    // AI List Generation with Gemini
     const handleGenerateAiList = async (e) => {
         e.preventDefault();
         setAiSuccessMessage('');
@@ -179,7 +179,6 @@ Example format:
             const result = await model.generateContent(prompt);
             const responseText = result.response.text();
 
-            // Clean code fences if any
             const cleanedJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             const words = JSON.parse(cleanedJson);
 
@@ -207,7 +206,6 @@ Example format:
         }
     };
 
-    // --- PIN AUTHENTICATION GATE ---
     if (!isAuthenticated) {
         return (
             <div className="animate-pop" style={{ maxWidth: '400px', margin: '40px auto', textAlign: 'center' }}>
@@ -250,7 +248,6 @@ Example format:
 
     return (
         <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-            {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <button
@@ -265,18 +262,22 @@ Example format:
                     </h2>
                 </div>
 
-                {/* Navigation Tabs */}
                 <div style={{ display: 'flex', gap: '6px', background: '#F1F5F9', padding: '4px', borderRadius: 'var(--radius-md)', flexWrap: 'wrap' }}>
                     {[
                         { id: 'profiles', label: 'Students', icon: <Users size={16} /> },
                         { id: 'lists', label: 'Word Lists', icon: <BookOpen size={16} /> },
-                        { id: 'ai', label: 'AI Generator', icon: <Wand2 size={16} /> },
+                        { id: 'ai', label: 'AI & Tools', icon: <Wand2 size={16} /> },
                         { id: 'leaderboard', label: 'Scoreboard', icon: <Trophy size={16} /> },
                         { id: 'settings', label: 'Settings', icon: <Settings size={16} /> }
                     ].map(tab => (
                         <button
                             key={tab.id}
-                            onClick={() => { sounds.playPop(); setActiveTab(tab.id); }}
+                            onClick={() => {
+                                sounds.playPop();
+                                setActiveTab(tab.id);
+                                setShowPhotoScanner(false);
+                                setShowBulkImporter(false);
+                            }}
                             className="btn"
                             style={{
                                 padding: '8px 14px',
@@ -293,10 +294,35 @@ Example format:
                 </div>
             </div>
 
+            {showPhotoScanner && (
+                <div style={{ marginBottom: '24px' }}>
+                    <PhotoListScanner
+                        targetProfileId={activeStudentId}
+                        onCancel={() => setShowPhotoScanner(false)}
+                        onListCreated={(created) => {
+                            setShowPhotoScanner(false);
+                            setEditingListId(created.id);
+                        }}
+                    />
+                </div>
+            )}
+
+            {showBulkImporter && (
+                <div style={{ marginBottom: '24px' }}>
+                    <BulkListImporter
+                        targetProfileId={activeStudentId}
+                        onCancel={() => setShowBulkImporter(false)}
+                        onListCreated={(created) => {
+                            setShowBulkImporter(false);
+                            setEditingListId(created.id);
+                        }}
+                    />
+                </div>
+            )}
+
             {/* TAB 1: STUDENT MANAGEMENT */}
-            {activeTab === 'profiles' && (
+            {activeTab === 'profiles' && !showPhotoScanner && !showBulkImporter && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-                    {/* Student List & Add */}
                     <div className="card-elevated" style={{ padding: '20px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                             <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>Students ({profiles.length})</span>
@@ -399,7 +425,6 @@ Example format:
                         </div>
                     </div>
 
-                    {/* Student Progress Overview */}
                     {currentStudent && (
                         <div className="card-elevated" style={{ padding: '20px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
@@ -423,7 +448,6 @@ Example format:
                                 </div>
                             </div>
 
-                            {/* Struggling Words Analysis */}
                             <div>
                                 <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '8px', color: '#475569' }}>
                                     Word Practice Analysis:
@@ -461,7 +485,7 @@ Example format:
             )}
 
             {/* TAB 2: WORD LISTS */}
-            {activeTab === 'lists' && (
+            {activeTab === 'lists' && !showPhotoScanner && !showBulkImporter && (
                 <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -476,22 +500,39 @@ Example format:
                             </select>
                         </div>
 
-                        <form onSubmit={handleCreateList} style={{ display: 'flex', gap: '8px' }}>
-                            <input
-                                type="text"
-                                placeholder="New list name..."
-                                value={newListTitle}
-                                onChange={e => setNewListTitle(e.target.value)}
-                                className="input-field"
-                                style={{ padding: '6px 12px', fontSize: '0.95rem' }}
-                            />
-                            <button type="submit" className="btn btn-primary" style={{ padding: '6px 14px', fontSize: '0.9rem' }}>
-                                + Create
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button
+                                onClick={() => { sounds.playPop(); setShowBulkImporter(true); }}
+                                className="btn btn-secondary"
+                                style={{ padding: '8px 14px', fontSize: '0.9rem' }}
+                            >
+                                <ClipboardList size={16} /> 📋 Paste Words
                             </button>
-                        </form>
+
+                            <button
+                                onClick={() => { sounds.playPop(); setShowPhotoScanner(true); }}
+                                className="btn btn-primary"
+                                style={{ padding: '8px 14px', fontSize: '0.9rem' }}
+                            >
+                                <Camera size={16} /> 📸 Scan Photo
+                            </button>
+
+                            <form onSubmit={handleCreateList} style={{ display: 'flex', gap: '8px' }}>
+                                <input
+                                    type="text"
+                                    placeholder="New list name..."
+                                    value={newListTitle}
+                                    onChange={e => setNewListTitle(e.target.value)}
+                                    className="input-field"
+                                    style={{ padding: '6px 12px', fontSize: '0.95rem' }}
+                                />
+                                <button type="submit" className="btn btn-amber" style={{ padding: '6px 14px', fontSize: '0.9rem' }}>
+                                    + Create
+                                </button>
+                            </form>
+                        </div>
                     </div>
 
-                    {/* Presets Row */}
                     <div style={{ background: '#F8FAFC', padding: '12px 16px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid #E2E8F0' }}>
                         <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', marginBottom: '8px' }}>
                             📦 Import Standard Curriculum Lists:
@@ -513,7 +554,6 @@ Example format:
                         </div>
                     </div>
 
-                    {/* Lists Grid / Editor */}
                     {!editingListId ? (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
                             {currentStudentLists.map(list => (
@@ -537,7 +577,6 @@ Example format:
                             ))}
                         </div>
                     ) : (
-                        /* Editing view */
                         <div className="card-elevated" style={{ padding: '20px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                                 <button
@@ -594,79 +633,145 @@ Example format:
                 </div>
             )}
 
-            {/* TAB 3: AI LIST GENERATOR */}
-            {activeTab === 'ai' && (
-                <div className="card-elevated" style={{ padding: '24px', maxWidth: '600px', margin: '0 auto' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-                        <div style={{ background: '#EEF2FF', padding: '10px', borderRadius: '12px', color: '#4F46E5' }}>
-                            <Wand2 size={24} />
-                        </div>
+            {/* TAB 3: AI & TOOLS */}
+            {activeTab === 'ai' && !showPhotoScanner && !showBulkImporter && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+                    {/* Option 1: Paste Text */}
+                    <div className="card-elevated" style={{ padding: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                         <div>
-                            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', color: '#1E293B' }}>
-                                Gemini AI List Generator
-                            </h3>
-                            <p style={{ color: '#64748B', fontSize: '0.9rem' }}>
-                                Automatically create curriculum-aligned spelling lists with custom hints!
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                                <div style={{ background: '#EEF2FF', padding: '10px', borderRadius: '12px', color: '#4F46E5' }}>
+                                    <ClipboardList size={24} />
+                                </div>
+                                <div>
+                                    <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.3rem', color: '#1E293B' }}>
+                                        Paste Word List
+                                    </h3>
+                                    <p style={{ color: '#64748B', fontSize: '0.85rem' }}>
+                                        From documents, emails, or messages
+                                    </p>
+                                </div>
+                            </div>
+                            <p style={{ color: '#475569', fontSize: '0.9rem', lineHeight: '1.5', marginBottom: '16px' }}>
+                                Quickly paste any list of words separated by commas, newlines, or numbered formats. Supports automatic AI hints!
                             </p>
                         </div>
-                    </div>
-
-                    <form onSubmit={handleGenerateAiList} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        <div>
-                            <label style={{ display: 'block', fontWeight: 700, marginBottom: '6px' }}>Assign to Student</label>
-                            <select
-                                value={activeStudentId || ''}
-                                onChange={e => setActiveStudentId(e.target.value)}
-                                className="input-field"
-                            >
-                                {profiles.map(p => <option key={p.id} value={p.id}>{p.avatar} {p.name} ({p.grade})</option>)}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label style={{ display: 'block', fontWeight: 700, marginBottom: '6px' }}>Grade Level</label>
-                            <select
-                                value={aiGrade}
-                                onChange={e => setAiGrade(e.target.value)}
-                                className="input-field"
-                            >
-                                {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label style={{ display: 'block', fontWeight: 700, marginBottom: '6px' }}>Topic or Theme</label>
-                            <input
-                                type="text"
-                                placeholder="e.g. Rainforest Animals, Science & Electricity, Outer Space"
-                                value={aiTopic}
-                                onChange={e => setAiTopic(e.target.value)}
-                                className="input-field"
-                                required
-                            />
-                        </div>
-
-                        {aiErrorMessage && (
-                            <div style={{ background: '#FEE2E2', color: '#991B1B', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.9rem' }}>
-                                {aiErrorMessage}
-                            </div>
-                        )}
-
-                        {aiSuccessMessage && (
-                            <div style={{ background: '#D1FAE5', color: '#065F46', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.9rem' }}>
-                                {aiSuccessMessage}
-                            </div>
-                        )}
 
                         <button
-                            type="submit"
+                            onClick={() => { sounds.playPop(); setShowBulkImporter(true); }}
                             className="btn btn-primary"
-                            disabled={isGenerating || !aiTopic.trim()}
-                            style={{ padding: '14px', fontSize: '1.1rem' }}
+                            style={{ width: '100%', padding: '14px', fontSize: '1.05rem' }}
                         >
-                            {isGenerating ? <Loader2 size={20} className="animate-spin" /> : <><Sparkles size={18} /> Generate 8 Words with AI</>}
+                            <ClipboardList size={20} /> Open Paste Importer
                         </button>
-                    </form>
+                    </div>
+
+                    {/* Option 2: Photo / Camera Scan */}
+                    <div className="card-elevated" style={{ padding: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                        <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                                <div style={{ background: '#FEF3C7', padding: '10px', borderRadius: '12px', color: '#B45309' }}>
+                                    <Camera size={24} />
+                                </div>
+                                <div>
+                                    <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.3rem', color: '#1E293B' }}>
+                                        Scan Photo / Worksheet
+                                    </h3>
+                                    <p style={{ color: '#64748B', fontSize: '0.85rem' }}>
+                                        Phone camera or photo upload
+                                    </p>
+                                </div>
+                            </div>
+                            <p style={{ color: '#475569', fontSize: '0.9rem', lineHeight: '1.5', marginBottom: '16px' }}>
+                                Snap a photo of a test, workbook, or handwriting. Gemini Vision reads and extracts all words instantly!
+                            </p>
+                        </div>
+
+                        <button
+                            onClick={() => { sounds.playPop(); setShowPhotoScanner(true); }}
+                            className="btn btn-amber"
+                            style={{ width: '100%', padding: '14px', fontSize: '1.05rem' }}
+                        >
+                            <Camera size={20} /> Open Photo Scanner
+                        </button>
+                    </div>
+
+                    {/* Option 3: AI Prompt Generator */}
+                    <div className="card-elevated" style={{ padding: '24px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                            <div style={{ background: '#ECFDF5', padding: '10px', borderRadius: '12px', color: '#059669' }}>
+                                <Wand2 size={24} />
+                            </div>
+                            <div>
+                                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.3rem', color: '#1E293B' }}>
+                                    Generate by Topic
+                                </h3>
+                                <p style={{ color: '#64748B', fontSize: '0.85rem' }}>
+                                    Create themed curriculum lists
+                                </p>
+                            </div>
+                        </div>
+
+                        <form onSubmit={handleGenerateAiList} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div>
+                                <label style={{ display: 'block', fontWeight: 600, fontSize: '0.85rem', marginBottom: '4px' }}>Student</label>
+                                <select
+                                    value={activeStudentId || ''}
+                                    onChange={e => setActiveStudentId(e.target.value)}
+                                    className="input-field"
+                                    style={{ padding: '8px 12px', fontSize: '0.9rem' }}
+                                >
+                                    {profiles.map(p => <option key={p.id} value={p.id}>{p.avatar} {p.name} ({p.grade})</option>)}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', fontWeight: 600, fontSize: '0.85rem', marginBottom: '4px' }}>Grade Level</label>
+                                <select
+                                    value={aiGrade}
+                                    onChange={e => setAiGrade(e.target.value)}
+                                    className="input-field"
+                                    style={{ padding: '8px 12px', fontSize: '0.9rem' }}
+                                >
+                                    {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', fontWeight: 600, fontSize: '0.85rem', marginBottom: '4px' }}>Topic or Theme</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. Dinosaurs, Weather, Ocean"
+                                    value={aiTopic}
+                                    onChange={e => setAiTopic(e.target.value)}
+                                    className="input-field"
+                                    style={{ padding: '8px 12px', fontSize: '0.9rem' }}
+                                    required
+                                />
+                            </div>
+
+                            {aiErrorMessage && (
+                                <div style={{ background: '#FEE2E2', color: '#991B1B', padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem' }}>
+                                    {aiErrorMessage}
+                                </div>
+                            )}
+
+                            {aiSuccessMessage && (
+                                <div style={{ background: '#D1FAE5', color: '#065F46', padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem' }}>
+                                    {aiSuccessMessage}
+                                </div>
+                            )}
+
+                            <button
+                                type="submit"
+                                className="btn btn-emerald"
+                                disabled={isGenerating || !aiTopic.trim()}
+                                style={{ padding: '12px', fontSize: '1rem', marginTop: '4px' }}
+                            >
+                                {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <><Sparkles size={16} /> Generate Words</>}
+                            </button>
+                        </form>
+                    </div>
                 </div>
             )}
 
@@ -721,7 +826,7 @@ Example format:
                     <div style={{ marginBottom: '24px' }}>
                         <label style={{ display: 'block', fontWeight: 700, marginBottom: '6px' }}>Gemini API Key</label>
                         <p style={{ fontSize: '0.85rem', color: '#64748B', marginBottom: '8px' }}>
-                            Required for AI list generation. Stored safely in your local browser only.
+                            Required for AI list generation, auto-hints, and photo OCR. Stored safely in your local browser only.
                         </p>
                         <input
                             type="password"

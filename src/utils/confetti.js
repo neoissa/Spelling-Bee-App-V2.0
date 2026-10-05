@@ -1,4 +1,4 @@
-// Smooth, lightweight canvas confetti effect with zero external dependencies
+// Lightweight Canvas Confetti Generator
 
 export const triggerConfetti = (durationMs = 2500) => {
     if (typeof window === 'undefined') return;
@@ -48,8 +48,8 @@ export const triggerConfetti = (durationMs = 2500) => {
         particles.forEach(p => {
             p.x += p.vx;
             p.y += p.vy;
-            p.vy += 0.35; // Gravity
-            p.vx *= 0.98; // Air resistance
+            p.vy += 0.35;
+            p.vx *= 0.98;
             p.rotation += p.vRot;
             p.opacity = Math.max(0, 1 - (elapsed / durationMs));
 

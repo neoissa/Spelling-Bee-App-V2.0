@@ -1,4 +1,4 @@
-// Preset Curriculums & Thematic Word Lists for all Grade Levels
+// Preset Curriculums & Thematic Word Lists
 
 export const PRESET_LISTS = [
     {

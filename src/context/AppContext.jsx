@@ -6,7 +6,6 @@ const AppContext = createContext();
 
 export const useAppContext = () => useContext(AppContext);
 
-// Initial starter profiles if localStorage is empty
 const defaultProfiles = [
     { id: '1', name: 'Ali', avatar: '🦁', color: '#4F46E5', grade: '1st Grade', stars: 45, wordMastery: {} },
     { id: '2', name: 'Serena', avatar: '🦄', color: '#EC4899', grade: '3rd Grade', stars: 120, wordMastery: {} }
@@ -56,13 +55,11 @@ export const AppProvider = ({ children }) => {
     const [parentApiKey, setParentApiKey] = useState(() => localStorage.getItem('sp_apiKey') || '');
     const [ttsMuted, setTtsMuted] = useState(() => loadState('sp_muted', false));
 
-    // Sync sound mute with audio engine
     useEffect(() => {
         sounds.setMuted(ttsMuted);
         localStorage.setItem('sp_muted', JSON.stringify(ttsMuted));
     }, [ttsMuted]);
 
-    // Save state changes to localStorage
     useEffect(() => {
         localStorage.setItem('sp_profiles_v2', JSON.stringify(profiles));
     }, [profiles]);
@@ -81,7 +78,6 @@ export const AppProvider = ({ children }) => {
         localStorage.setItem('sp_apiKey', parentApiKey);
     }, [parentApiKey]);
 
-    // Profile Actions
     const addProfile = useCallback((profile) => {
         const newId = Date.now().toString();
         const createdProfile = {
@@ -92,7 +88,6 @@ export const AppProvider = ({ children }) => {
         };
         setProfiles(prev => [...prev, createdProfile]);
 
-        // Auto-assign starter preset list based on grade or default
         const matchingPreset = PRESET_LISTS.find(p => p.grade === profile.grade) || PRESET_LISTS[1];
         if (matchingPreset) {
             setCustomLists(prev => [...prev, {
@@ -149,7 +144,6 @@ export const AppProvider = ({ children }) => {
         }));
     }, [activeProfileId]);
 
-    // Import preset list for a profile
     const importPresetList = useCallback((profileId, presetId) => {
         const preset = PRESET_LISTS.find(p => p.id === presetId);
         if (!preset) return;

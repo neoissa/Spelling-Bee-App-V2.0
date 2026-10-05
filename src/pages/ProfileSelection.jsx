@@ -28,7 +28,6 @@ export default function ProfileSelection() {
                 </p>
             </div>
 
-            {/* Profile Grid */}
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
@@ -100,7 +99,6 @@ export default function ProfileSelection() {
                 ))}
             </div>
 
-            {/* Actions for Parents or Empty State */}
             <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <button
                     onClick={() => { sounds.playPop(); navigate('/hub'); }}

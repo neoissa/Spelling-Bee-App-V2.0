@@ -10,7 +10,7 @@ import BulkListImporter from '../components/BulkListImporter';
 import {
     ArrowLeft, Volume2, Gamepad2, Brain, Shuffle, PlusCircle,
     Trash2, Sparkles, Flame, CheckCircle2, RotateCcw, Award, Play,
-    Camera, ClipboardList, Share2, Check
+    Camera, ClipboardList, Share2, Check, Edit3
 } from 'lucide-react';
 
 export default function PlayArena() {
@@ -33,6 +33,11 @@ export default function PlayArena() {
     const [isCreatingList, setIsCreatingList] = useState(false);
     const [isScanningPhoto, setIsScanningPhoto] = useState(false);
     const [isBulkImporting, setIsBulkImporting] = useState(false);
+    const [isEditingActiveList, setIsEditingActiveList] = useState(false);
+    const [editingListObj, setEditingListObj] = useState(null);
+    const [editWordInput, setEditWordInput] = useState('');
+    const [editHintInput, setEditHintInput] = useState('');
+
     const [newListTitle, setNewListTitle] = useState('');
     const [newWord, setNewWord] = useState('');
     const [newHint, setNewHint] = useState('');
@@ -284,6 +289,59 @@ export default function PlayArena() {
         }
     };
 
+    const handleOpenEditList = (listToEdit) => {
+        sounds.playPop();
+        setEditingListObj({ ...listToEdit, words: [...listToEdit.words] });
+        setIsEditingActiveList(true);
+    };
+
+    const handleSaveEditedList = (e) => {
+        e.preventDefault();
+        if (!editingListObj || editingListObj.words.length === 0) return;
+        sounds.playVictory();
+
+        setCustomLists(customLists.map(l => l.id === editingListObj.id ? editingListObj : l));
+        setSelectedList(editingListObj);
+        setIsEditingActiveList(false);
+        setSyncNotification(`✨ Updated "${editingListObj.title}" with ${editingListObj.words.length} words!`);
+        setTimeout(() => setSyncNotification(null), 3000);
+    };
+
+    const handleAddWordToEditList = (e) => {
+        e.preventDefault();
+        if (!editWordInput.trim()) return;
+        sounds.playPop();
+        setEditingListObj(prev => ({
+            ...prev,
+            words: [...prev.words, {
+                word: editWordInput.trim().toLowerCase(),
+                hint: editHintInput.trim() || 'Spelling practice word'
+            }]
+        }));
+        setEditWordInput('');
+        setEditHintInput('');
+    };
+
+    const handleRemoveWordFromEditList = (index) => {
+        sounds.playPop();
+        setEditingListObj(prev => ({
+            ...prev,
+            words: prev.words.filter((_, i) => i !== index)
+        }));
+    };
+
+    const handleDeleteCustomList = (listId) => {
+        if (window.confirm("Are you sure you want to delete this word list?")) {
+            sounds.playPop();
+            setCustomLists(customLists.filter(l => l.id !== listId));
+            setIsEditingActiveList(false);
+            if (selectedList?.id === listId) {
+                const remaining = studentLists.filter(l => l.id !== listId);
+                setSelectedList(remaining[0] || null);
+            }
+        }
+    };
+
     if (!activeProfile) return null;
 
     if (isScanningPhoto) {
@@ -309,6 +367,155 @@ export default function PlayArena() {
                     setIsBulkImporting(false);
                 }}
             />
+        );
+    }
+
+    if (isEditingActiveList && editingListObj) {
+        return (
+            <div className="animate-fade" style={{ maxWidth: '680px', margin: '0 auto' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+                    <button
+                        onClick={() => { sounds.playPop(); setIsEditingActiveList(false); }}
+                        className="btn btn-secondary"
+                    >
+                        <ArrowLeft size={18} /> Back to Lists
+                    </button>
+                    <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.6rem', color: '#1E293B' }}>
+                        ✏️ Edit Word List
+                    </h2>
+                    <button
+                        onClick={() => handleDeleteCustomList(editingListObj.id)}
+                        className="btn"
+                        style={{ background: '#FEE2E2', color: '#DC2626', padding: '6px 12px', fontSize: '0.85rem' }}
+                        title="Delete this entire list"
+                    >
+                        <Trash2 size={16} /> Delete List
+                    </button>
+                </div>
+
+                <div className="glass-panel" style={{ padding: '24px' }}>
+                    <div style={{ marginBottom: '20px' }}>
+                        <label style={{ display: 'block', fontWeight: 700, marginBottom: '6px' }}>List Name</label>
+                        <input
+                            type="text"
+                            value={editingListObj.title}
+                            onChange={e => setEditingListObj({ ...editingListObj, title: e.target.value })}
+                            className="input-field"
+                            required
+                            style={{ fontSize: '1.1rem', fontWeight: 600 }}
+                        />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                        <button
+                            type="button"
+                            onClick={() => { sounds.playPop(); setIsBulkImporting(true); }}
+                            className="btn btn-secondary"
+                            style={{ padding: '8px 14px', fontSize: '0.85rem' }}
+                        >
+                            <ClipboardList size={16} /> 📋 Paste Extra Words
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { sounds.playPop(); setIsScanningPhoto(true); }}
+                            className="btn btn-primary"
+                            style={{ padding: '8px 14px', fontSize: '0.85rem' }}
+                        >
+                            <Camera size={16} /> 📸 Scan More Words
+                        </button>
+                    </div>
+
+                    {/* Add Word Form */}
+                    <form onSubmit={handleAddWordToEditList} style={{ background: '#F8FAFC', padding: '16px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid #E2E8F0' }}>
+                        <div style={{ fontWeight: 700, marginBottom: '10px', color: '#475569' }}>Add Word to List:</div>
+                        <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                            <input
+                                type="text"
+                                placeholder="Word (e.g. delicious)"
+                                value={editWordInput}
+                                onChange={e => setEditWordInput(e.target.value)}
+                                className="input-field"
+                                style={{ flex: 1 }}
+                            />
+                            <button type="submit" className="btn btn-emerald" disabled={!editWordInput.trim()}>
+                                + Add Word
+                            </button>
+                        </div>
+                        <input
+                            type="text"
+                            placeholder="Optional clue / hint sentence"
+                            value={editHintInput}
+                            onChange={e => setEditHintInput(e.target.value)}
+                            className="input-field"
+                            style={{ fontSize: '0.9rem' }}
+                        />
+                    </form>
+
+                    {/* Words List Container */}
+                    <div style={{ marginBottom: '24px' }}>
+                        <div style={{ fontWeight: 700, marginBottom: '10px', color: '#475569', display: 'flex', justifyContent: 'space-between' }}>
+                            <span>Words in List ({editingListObj.words.length}):</span>
+                            <span style={{ fontSize: '0.8rem', color: '#64748B', fontWeight: 500 }}>Click ✕ to remove any word</span>
+                        </div>
+
+                        {editingListObj.words.length === 0 ? (
+                            <p style={{ color: '#94A3B8', fontStyle: 'italic', fontSize: '0.95rem' }}>No words in this list. Add some above!</p>
+                        ) : (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '220px', overflowY: 'auto', padding: '4px' }}>
+                                {editingListObj.words.map((w, idx) => (
+                                    <div
+                                        key={idx}
+                                        style={{
+                                            background: '#EEF2FF',
+                                            color: '#3730A3',
+                                            padding: '8px 14px',
+                                            borderRadius: '9999px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            fontWeight: 600,
+                                            border: '1px solid #C7D2FE',
+                                            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                                        }}
+                                    >
+                                        <span style={{ fontSize: '1rem', textTransform: 'lowercase' }}>{w.word}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemoveWordFromEditList(idx)}
+                                            style={{
+                                                background: '#FEE2E2',
+                                                border: 'none',
+                                                color: '#DC2626',
+                                                cursor: 'pointer',
+                                                width: '20px',
+                                                height: '20px',
+                                                borderRadius: '50%',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 'bold'
+                                            }}
+                                            title="Delete word"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <button
+                        onClick={handleSaveEditedList}
+                        className="btn btn-emerald"
+                        style={{ width: '100%', fontSize: '1.15rem', padding: '14px' }}
+                        disabled={!editingListObj.title.trim() || editingListObj.words.length === 0}
+                    >
+                        💾 Save & Practice Now!
+                    </button>
+                </div>
+            </div>
         );
     }
 
@@ -707,6 +914,27 @@ export default function PlayArena() {
                                     </div>
                                     
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        {/* Edit Words Button */}
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleOpenEditList(list); }}
+                                            style={{
+                                                background: '#EEF2FF',
+                                                border: '1px solid #C7D2FE',
+                                                color: '#4F46E5',
+                                                padding: '6px 10px',
+                                                borderRadius: '6px',
+                                                cursor: 'pointer',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 600,
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '4px'
+                                            }}
+                                            title="Edit or add words to this list"
+                                        >
+                                            <Edit3 size={13} /> Edit
+                                        </button>
+
                                         {/* Share Link Button for Serena's PC */}
                                         <button
                                             onClick={(e) => handleShareList(e, list)}
@@ -725,7 +953,7 @@ export default function PlayArena() {
                                             }}
                                             title="Copy link to send to Serena's PC"
                                         >
-                                            {isCopied ? <Check size={14} /> : <Share2 size={14} />}
+                                            {isCopied ? <Check size={13} /> : <Share2 size={13} />}
                                             {isCopied ? 'Copied!' : 'Share'}
                                         </button>
                                         {isSelected && <CheckCircle2 size={20} color="#4F46E5" />}

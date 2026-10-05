@@ -4,13 +4,13 @@ import { useAppContext } from './context/AppContext';
 import ProfileSelection from './pages/ProfileSelection';
 import ParentHub from './pages/ParentHub';
 import PlayArena from './pages/PlayArena';
-import { Settings, Home, ArrowLeft, Volume2, VolumeX, Sparkles } from 'lucide-react';
+import { Settings, ArrowLeft, Volume2, VolumeX, CheckCircle, X } from 'lucide-react';
 import { sounds } from './utils/audio';
 
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { activeProfile, ttsMuted, setTtsMuted } = useAppContext();
+  const { activeProfile, ttsMuted, setTtsMuted, syncNotification, setSyncNotification } = useAppContext();
 
   const isHome = location.pathname === '/';
 
@@ -21,6 +21,36 @@ export default function App() {
 
   return (
     <div className="app-container">
+      {/* Cross-Device Sync Notification Banner */}
+      {syncNotification && (
+        <div
+          className="animate-pop"
+          style={{
+            background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+            color: 'white',
+            padding: '12px 18px',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            boxShadow: 'var(--shadow-md)',
+            fontWeight: 600,
+            fontSize: '0.95rem'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <CheckCircle size={20} />
+            <span>{syncNotification}</span>
+          </div>
+          <button
+            onClick={() => setSyncNotification(null)}
+            style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex' }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+      )}
+
       {/* Top Header & Navigation */}
       <header className="app-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { sounds } from '../utils/audio';
 import { PRESET_LISTS } from '../data/presetLists';
+import { parseSharedListFromUrl, importFullBackupCode } from '../utils/syncManager';
 
 const AppContext = createContext();
 
@@ -50,10 +51,49 @@ export const AppProvider = ({ children }) => {
     };
 
     const [profiles, setProfiles] = useState(() => loadState('sp_profiles_v2', defaultProfiles));
-    const [activeProfileId, setActiveProfileId] = useState(() => loadState('sp_activeProfile_v2', '1'));
+    const [activeProfileId, setActiveProfileId] = useState(() => loadState('sp_activeProfile_v2', '2')); // Default to Serena ('2') or 1
     const [customLists, setCustomLists] = useState(() => loadState('sp_lists_v2', defaultCustomLists));
     const [parentApiKey, setParentApiKey] = useState(() => localStorage.getItem('sp_apiKey') || '');
     const [ttsMuted, setTtsMuted] = useState(() => loadState('sp_muted', false));
+    const [syncNotification, setSyncNotification] = useState(null);
+
+    // Auto-import shared list if opened via shareable URL link on Serena's PC
+    useEffect(() => {
+        const shared = parseSharedListFromUrl();
+        if (shared && shared.words && shared.words.length > 0) {
+            // Find Serena's profile or active profile
+            const targetProfile = profiles.find(p => p.name.toLowerCase() === 'serena') || profiles[0];
+            const targetId = targetProfile ? targetProfile.id : '2';
+
+            const newList = {
+                id: `shared-${Date.now()}`,
+                profileId: targetId,
+                title: shared.title || '📥 Shared Word List',
+                words: shared.words,
+                scheduledDate: ''
+            };
+
+            setCustomLists(prev => {
+                // Avoid duplicate if list title and word count already exists
+                const exists = prev.some(l => l.profileId === targetId && l.title === newList.title && l.words.length === newList.words.length);
+                if (exists) return prev;
+                return [newList, ...prev];
+            });
+
+            if (targetProfile) {
+                setActiveProfileId(targetProfile.id);
+            }
+
+            setSyncNotification(`✨ Added "${newList.title}" with ${newList.words.length} words to ${targetProfile?.name || 'profile'}!`);
+            sounds.playVictory();
+
+            // Clear URL parameter cleanly without reloading page
+            const cleanUrl = window.location.href.split('?')[0];
+            window.history.replaceState({}, document.title, cleanUrl);
+
+            setTimeout(() => setSyncNotification(null), 6000);
+        }
+    }, [profiles]);
 
     useEffect(() => {
         sounds.setMuted(ttsMuted);
@@ -159,6 +199,19 @@ export const AppProvider = ({ children }) => {
         return newList.id;
     }, []);
 
+    // Full backup restoration
+    const restoreFromSyncCode = useCallback((codeString) => {
+        const data = importFullBackupCode(codeString);
+        setProfiles(data.profiles);
+        setCustomLists(data.customLists);
+        if (data.profiles.length > 0) {
+            setActiveProfileId(data.profiles[0].id);
+        }
+        sounds.playVictory();
+        setSyncNotification('🎉 All student profiles & word lists synced successfully!');
+        setTimeout(() => setSyncNotification(null), 5000);
+    }, []);
+
     const activeProfile = useMemo(() => {
         return profiles.find(p => p.id === activeProfileId) || profiles[0] || null;
     }, [profiles, activeProfileId]);
@@ -177,6 +230,9 @@ export const AppProvider = ({ children }) => {
         customLists,
         setCustomLists,
         importPresetList,
+        restoreFromSyncCode,
+        syncNotification,
+        setSyncNotification,
         parentApiKey,
         setParentApiKey,
         ttsMuted,
@@ -192,6 +248,8 @@ export const AppProvider = ({ children }) => {
         recordWordAttempt,
         customLists,
         importPresetList,
+        restoreFromSyncCode,
+        syncNotification,
         parentApiKey,
         ttsMuted
     ]);

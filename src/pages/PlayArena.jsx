@@ -4,12 +4,13 @@ import { useAppContext } from '../context/AppContext';
 import { sounds, speakWord } from '../utils/audio';
 import { triggerConfetti } from '../utils/confetti';
 import { PRESET_LISTS } from '../data/presetLists';
+import { generateShareableListUrl } from '../utils/syncManager';
 import PhotoListScanner from '../components/PhotoListScanner';
 import BulkListImporter from '../components/BulkListImporter';
 import {
     ArrowLeft, Volume2, Gamepad2, Brain, Shuffle, PlusCircle,
     Trash2, Sparkles, Flame, CheckCircle2, RotateCcw, Award, Play,
-    Camera, ClipboardList
+    Camera, ClipboardList, Share2, Check
 } from 'lucide-react';
 
 export default function PlayArena() {
@@ -21,7 +22,8 @@ export default function PlayArena() {
         addStarToActive,
         recordWordAttempt,
         importPresetList,
-        ttsMuted
+        ttsMuted,
+        setSyncNotification
     } = useAppContext();
 
     const [selectedList, setSelectedList] = useState(null);
@@ -35,6 +37,7 @@ export default function PlayArena() {
     const [newWord, setNewWord] = useState('');
     const [newHint, setNewHint] = useState('');
     const [createdWords, setCreatedWords] = useState([]);
+    const [copiedListId, setCopiedListId] = useState(null);
 
     // Game State
     const [isPlaying, setIsPlaying] = useState(false);
@@ -265,6 +268,20 @@ export default function PlayArena() {
         }]);
         setNewWord('');
         setNewHint('');
+    };
+
+    const handleShareList = (e, list) => {
+        e.stopPropagation();
+        sounds.playPop();
+        const url = generateShareableListUrl(list);
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(url);
+            setCopiedListId(list.id);
+            setSyncNotification(`🔗 Copied share link for "${list.title}" to clipboard! Open it on Serena's PC.`);
+            setTimeout(() => setCopiedListId(null), 3000);
+        } else {
+            prompt('Copy this shareable link and open it on Serena\'s PC:', url);
+        }
     };
 
     if (!activeProfile) return null;
@@ -663,6 +680,7 @@ export default function PlayArena() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto', paddingRight: '4px' }}>
                         {studentLists.map(list => {
                             const isSelected = selectedList?.id === list.id;
+                            const isCopied = copiedListId === list.id;
                             return (
                                 <div
                                     key={list.id}
@@ -687,7 +705,31 @@ export default function PlayArena() {
                                             {list.words.length} words
                                         </div>
                                     </div>
-                                    {isSelected && <CheckCircle2 size={20} color="#4F46E5" />}
+                                    
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        {/* Share Link Button for Serena's PC */}
+                                        <button
+                                            onClick={(e) => handleShareList(e, list)}
+                                            style={{
+                                                background: isCopied ? '#D1FAE5' : '#F1F5F9',
+                                                border: '1px solid #CBD5E1',
+                                                color: isCopied ? '#065F46' : '#475569',
+                                                padding: '6px 10px',
+                                                borderRadius: '6px',
+                                                cursor: 'pointer',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 600,
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '4px'
+                                            }}
+                                            title="Copy link to send to Serena's PC"
+                                        >
+                                            {isCopied ? <Check size={14} /> : <Share2 size={14} />}
+                                            {isCopied ? 'Copied!' : 'Share'}
+                                        </button>
+                                        {isSelected && <CheckCircle2 size={20} color="#4F46E5" />}
+                                    </div>
                                 </div>
                             );
                         })}

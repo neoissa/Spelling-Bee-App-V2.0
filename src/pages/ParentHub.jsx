@@ -5,9 +5,11 @@ import { sounds } from '../utils/audio';
 import { PRESET_LISTS } from '../data/presetLists';
 import PhotoListScanner from '../components/PhotoListScanner';
 import BulkListImporter from '../components/BulkListImporter';
+import { generateShareableListUrl, exportFullBackupCode } from '../utils/syncManager';
 import {
     Settings, Users, Key, BookOpen, Trash2, Plus, ArrowLeft,
-    Wand2, Loader2, Trophy, Sparkles, Camera, ClipboardList
+    Wand2, Loader2, Trophy, Sparkles, Camera, ClipboardList,
+    Share2, Download, Upload, Check, Copy, RefreshCw
 } from 'lucide-react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
@@ -24,6 +26,7 @@ export default function ParentHub() {
         customLists,
         setCustomLists,
         importPresetList,
+        restoreFromSyncCode,
         parentApiKey,
         setParentApiKey,
         ttsMuted,
@@ -55,6 +58,12 @@ export default function ParentHub() {
     const [isGenerating, setIsGenerating] = useState(false);
     const [aiSuccessMessage, setAiSuccessMessage] = useState('');
     const [aiErrorMessage, setAiErrorMessage] = useState('');
+
+    const [copiedListId, setCopiedListId] = useState(null);
+    const [exportCode, setExportCode] = useState('');
+    const [importCodeInput, setImportCodeInput] = useState('');
+    const [syncMessage, setSyncMessage] = useState({ text: '', type: '' });
+    const [codeCopied, setCodeCopied] = useState(false);
 
     const handlePinSubmit = (e) => {
         e.preventDefault();
@@ -147,6 +156,52 @@ export default function ParentHub() {
             sounds.playPop();
             setCustomLists(customLists.filter(l => l.id !== listId));
             if (editingListId === listId) setEditingListId(null);
+        }
+    };
+
+    const handleShareList = (e, list) => {
+        e.stopPropagation();
+        try {
+            const url = generateShareableListUrl(list);
+            navigator.clipboard.writeText(url);
+            setCopiedListId(list.id);
+            sounds.playCorrect();
+            setTimeout(() => setCopiedListId(null), 3500);
+        } catch (err) {
+            console.error('Failed to copy share link:', err);
+        }
+    };
+
+    const handleGenerateExportCode = () => {
+        sounds.playPop();
+        const code = exportFullBackupCode(profiles, customLists);
+        setExportCode(code);
+        setSyncMessage({ text: 'Sync code generated! Copy it below and paste it on Serena\'s PC.', type: 'success' });
+    };
+
+    const handleCopyExportCode = () => {
+        if (!exportCode) return;
+        navigator.clipboard.writeText(exportCode);
+        setCodeCopied(true);
+        sounds.playCorrect();
+        setTimeout(() => setCodeCopied(false), 3000);
+    };
+
+    const handleImportSyncCode = (e) => {
+        e.preventDefault();
+        setSyncMessage({ text: '', type: '' });
+        if (!importCodeInput.trim()) {
+            setSyncMessage({ text: 'Please paste a sync code first.', type: 'error' });
+            return;
+        }
+        try {
+            restoreFromSyncCode(importCodeInput.trim());
+            setImportCodeInput('');
+            setSyncMessage({ text: '🎉 Successfully synced all profiles, lists, and stars to this device!', type: 'success' });
+        } catch (err) {
+            console.error('Import failed:', err);
+            sounds.playWrong();
+            setSyncMessage({ text: 'Invalid or incomplete sync code. Please check that you copied the full code.', type: 'error' });
         }
     };
 
@@ -563,14 +618,36 @@ Example format:
                                     className="card-elevated"
                                     style={{ padding: '16px', cursor: 'pointer' }}
                                 >
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', gap: '6px' }}>
                                         <h4 style={{ fontWeight: 700, fontSize: '1.1rem', color: '#1E293B' }}>{list.title}</h4>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleDeleteList(list.id); }}
-                                            style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer' }}
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
+                                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                            <button
+                                                onClick={(e) => handleShareList(e, list)}
+                                                style={{
+                                                    background: copiedListId === list.id ? '#D1FAE5' : '#EEF2FF',
+                                                    border: 'none',
+                                                    color: copiedListId === list.id ? '#065F46' : '#4F46E5',
+                                                    borderRadius: '6px',
+                                                    padding: '4px 8px',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 600,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                    cursor: 'pointer'
+                                                }}
+                                                title="Copy share link for Serena's PC"
+                                            >
+                                                {copiedListId === list.id ? <><Check size={12} /> Copied!</> : <><Share2 size={12} /> Share</>}
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleDeleteList(list.id); }}
+                                                style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: '4px' }}
+                                                title="Delete list"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
                                     </div>
                                     <div style={{ fontSize: '0.85rem', color: '#64748B' }}>{list.words.length} Words</div>
                                 </div>
@@ -578,7 +655,7 @@ Example format:
                         </div>
                     ) : (
                         <div className="card-elevated" style={{ padding: '20px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
                                 <button
                                     onClick={() => setEditingListId(null)}
                                     className="btn btn-secondary"
@@ -586,9 +663,25 @@ Example format:
                                 >
                                     <ArrowLeft size={16} /> Back to all lists
                                 </button>
-                                <h3 style={{ fontWeight: 700, fontSize: '1.2rem' }}>
-                                    Editing: {customLists.find(l => l.id === editingListId)?.title}
-                                </h3>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    {customLists.find(l => l.id === editingListId) && (
+                                        <button
+                                            onClick={(e) => handleShareList(e, customLists.find(l => l.id === editingListId))}
+                                            className="btn btn-secondary"
+                                            style={{
+                                                padding: '6px 12px',
+                                                fontSize: '0.85rem',
+                                                background: copiedListId === editingListId ? '#D1FAE5' : undefined,
+                                                color: copiedListId === editingListId ? '#065F46' : undefined
+                                            }}
+                                        >
+                                            {copiedListId === editingListId ? <><Check size={14} /> Link Copied!</> : <><Share2 size={14} /> Share Link 🔗</>}
+                                        </button>
+                                    )}
+                                    <h3 style={{ fontWeight: 700, fontSize: '1.2rem' }}>
+                                        Editing: {customLists.find(l => l.id === editingListId)?.title}
+                                    </h3>
+                                </div>
                             </div>
 
                             <form onSubmit={handleAddWord} style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
@@ -816,53 +909,165 @@ Example format:
                 </div>
             )}
 
-            {/* TAB 5: SETTINGS */}
+            {/* TAB 5: SETTINGS & CROSS-DEVICE SYNC */}
             {activeTab === 'settings' && (
-                <div className="card-elevated" style={{ padding: '24px', maxWidth: '600px', margin: '0 auto' }}>
-                    <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Key size={20} /> App Settings & Keys
-                    </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '680px', margin: '0 auto' }}>
+                    {/* Card 1: Cross-Device Sync & Family Backup */}
+                    <div className="card-elevated" style={{ padding: '24px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                            <div style={{ background: '#EEF2FF', padding: '10px', borderRadius: '12px', color: '#4F46E5' }}>
+                                <RefreshCw size={24} />
+                            </div>
+                            <div>
+                                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.3rem', color: '#1E293B' }}>
+                                    Cross-Device Sync & Backup 🔄
+                                </h3>
+                                <p style={{ color: '#64748B', fontSize: '0.85rem' }}>
+                                    Sync all student profiles, spelling lists, and stars to Serena's PC or tablet
+                                </p>
+                            </div>
+                        </div>
 
-                    <div style={{ marginBottom: '24px' }}>
-                        <label style={{ display: 'block', fontWeight: 700, marginBottom: '6px' }}>Gemini API Key</label>
-                        <p style={{ fontSize: '0.85rem', color: '#64748B', marginBottom: '8px' }}>
-                            Required for AI list generation, auto-hints, and photo OCR. Stored safely in your local browser only.
-                        </p>
-                        <input
-                            type="password"
-                            value={parentApiKey}
-                            onChange={e => setParentApiKey(e.target.value)}
-                            placeholder="AIzaSy..."
-                            className="input-field"
-                            style={{ fontFamily: 'monospace' }}
-                        />
-                    </div>
+                        {syncMessage.text && (
+                            <div style={{
+                                padding: '12px 16px',
+                                borderRadius: 'var(--radius-sm)',
+                                marginBottom: '16px',
+                                fontSize: '0.9rem',
+                                fontWeight: 600,
+                                background: syncMessage.type === 'success' ? '#D1FAE5' : '#FEE2E2',
+                                color: syncMessage.type === 'success' ? '#065F46' : '#991B1B'
+                            }}>
+                                {syncMessage.text}
+                            </div>
+                        )}
 
-                    <div style={{ marginBottom: '24px' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600 }}>
-                            <input
-                                type="checkbox"
-                                checked={ttsMuted}
-                                onChange={e => setTtsMuted(e.target.checked)}
-                                style={{ width: '20px', height: '20px' }}
+                        {/* Step 1: Export */}
+                        <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid #E2E8F0', marginBottom: '16px' }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1E293B', marginBottom: '4px' }}>
+                                📤 1. Send Data from this Device (Export)
+                            </div>
+                            <p style={{ fontSize: '0.85rem', color: '#64748B', marginBottom: '12px' }}>
+                                Generate a portable sync code to load all profiles & lists onto Serena's computer.
+                            </p>
+                            <button
+                                onClick={handleGenerateExportCode}
+                                className="btn btn-primary"
+                                style={{ padding: '8px 16px', fontSize: '0.9rem', marginBottom: exportCode ? '12px' : '0' }}
+                            >
+                                <Download size={16} /> Generate Family Sync Code
+                            </button>
+
+                            {exportCode && (
+                                <div style={{ marginTop: '12px' }}>
+                                    <textarea
+                                        readOnly
+                                        value={exportCode}
+                                        rows={3}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px',
+                                            fontFamily: 'monospace',
+                                            fontSize: '0.8rem',
+                                            borderRadius: 'var(--radius-sm)',
+                                            border: '1px solid #CBD5E1',
+                                            background: '#FFFFFF',
+                                            resize: 'none'
+                                        }}
+                                        onClick={e => e.target.select()}
+                                    />
+                                    <button
+                                        onClick={handleCopyExportCode}
+                                        className="btn btn-emerald"
+                                        style={{ marginTop: '8px', padding: '8px 16px', fontSize: '0.9rem' }}
+                                    >
+                                        {codeCopied ? <><Check size={16} /> Copied to Clipboard!</> : <><Copy size={16} /> Copy Sync Code</>}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Step 2: Import */}
+                        <form onSubmit={handleImportSyncCode} style={{ background: '#F8FAFC', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid #E2E8F0' }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1E293B', marginBottom: '4px' }}>
+                                📥 2. Receive Data on Serena's PC (Import)
+                            </div>
+                            <p style={{ fontSize: '0.85rem', color: '#64748B', marginBottom: '12px' }}>
+                                Paste the sync code from your other device to load all words and progress here.
+                            </p>
+                            <textarea
+                                placeholder="Paste the sync code here..."
+                                value={importCodeInput}
+                                onChange={e => setImportCodeInput(e.target.value)}
+                                rows={3}
+                                style={{
+                                    width: '100%',
+                                    padding: '10px',
+                                    fontFamily: 'monospace',
+                                    fontSize: '0.85rem',
+                                    borderRadius: 'var(--radius-sm)',
+                                    border: '1px solid #CBD5E1',
+                                    background: '#FFFFFF',
+                                    marginBottom: '10px'
+                                }}
                             />
-                            Mute speech narration & sound effects
-                        </label>
+                            <button
+                                type="submit"
+                                className="btn btn-amber"
+                                style={{ padding: '8px 16px', fontSize: '0.9rem' }}
+                            >
+                                <Upload size={16} /> Restore & Sync to this PC
+                            </button>
+                        </form>
                     </div>
 
-                    <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '16px' }}>
-                        <button
-                            onClick={() => {
-                                if (window.confirm("Reset all spelling data and restore defaults?")) {
-                                    localStorage.clear();
-                                    window.location.reload();
-                                }
-                            }}
-                            className="btn"
-                            style={{ background: '#FEE2E2', color: '#991B1B', padding: '10px 16px', fontSize: '0.9rem' }}
-                        >
-                            Reset to Default Demo Data
-                        </button>
+                    {/* Card 2: App Settings & Keys */}
+                    <div className="card-elevated" style={{ padding: '24px' }}>
+                        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.3rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Key size={20} /> App Settings & Keys
+                        </h3>
+
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={{ display: 'block', fontWeight: 700, marginBottom: '6px' }}>Gemini API Key</label>
+                            <p style={{ fontSize: '0.85rem', color: '#64748B', marginBottom: '8px' }}>
+                                Required for AI list generation, auto-hints, and photo OCR. Stored safely in your local browser only.
+                            </p>
+                            <input
+                                type="password"
+                                value={parentApiKey}
+                                onChange={e => setParentApiKey(e.target.value)}
+                                placeholder="AIzaSy..."
+                                className="input-field"
+                                style={{ fontFamily: 'monospace' }}
+                            />
+                        </div>
+
+                        <div style={{ marginBottom: '20px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontWeight: 600 }}>
+                                <input
+                                    type="checkbox"
+                                    checked={ttsMuted}
+                                    onChange={e => setTtsMuted(e.target.checked)}
+                                    style={{ width: '20px', height: '20px' }}
+                                />
+                                Mute speech narration & sound effects
+                            </label>
+                        </div>
+
+                        <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '16px' }}>
+                            <button
+                                onClick={() => {
+                                    if (window.confirm("Reset all spelling data and restore defaults?")) {
+                                        localStorage.clear();
+                                        window.location.reload();
+                                    }
+                                }}
+                                className="btn"
+                                style={{ background: '#FEE2E2', color: '#991B1B', padding: '10px 16px', fontSize: '0.9rem' }}
+                            >
+                                Reset to Default Demo Data
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
